@@ -174,8 +174,10 @@ the currently selected/edited universe. Existing report files are protected.
 
 The JPL endpoint residual is hundreds of kilometres for Earth/Moon despite tiny numerical error in
 the simple analytic case. Numerical precision and physical-model completeness are different. Passing
-historical regression guards does not certify a sandbox or validate climate, collision, stellar or
-civilization models. No covariance, interval-wide trajectory bound or independent integrator comparison
+historical regression guards does not certify a sandbox or validate collision, stellar or
+civilization models. Climate now has its own analytic fixtures and a regression guard
+(`climate-analytic-greenhouse`) in the same report, but those pin the 0-D model's
+self-consistency rather than observational accuracy (see [CLIMATE_VALIDATION](CLIMATE_VALIDATION.md)). No covariance, interval-wide trajectory bound or independent integrator comparison
 is supplied. See [SCIENTIFIC_VALIDATION](SCIENTIFIC_VALIDATION.md) for measured evidence.
 
 ```sh

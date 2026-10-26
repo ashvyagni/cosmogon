@@ -946,6 +946,32 @@ mod tests {
         assert_eq!(serde_json::to_string(&a).unwrap(), serde_json::to_string(&b).unwrap());
     }
 
+    /// Build 61 — the blast → climate chain must be chunk-independent like every other
+    /// outcome: one `advance_by` versus four phased `advance_to` chunks give byte-identical
+    /// universes (winters, Chronicle events, habitability and all).
+    #[test]
+    fn blast_climate_chain_is_independent_of_chunking() {
+        let total = 40.0 * crate::time::SECONDS_PER_YEAR;
+        // Inject the blast first, then chunk-advance two copies of the same universe.
+        let mut base = Universe::new(small(Scenario::Sol, 42));
+        let dist = crate::stellar::inject_blast(&mut base, 0.5);
+        assert!(dist > 0.0);
+        let mut a = base.clone();
+        let mut b = base.clone();
+        a.advance_by(total);
+        let start = b.time;
+        let mut done = 0.0;
+        let mut i = 0;
+        while done < total {
+            let dt = [0.37, 13.0, 101.3, 7.7][i % 4] * crate::time::SECONDS_PER_YEAR;
+            done = (done + dt).min(total);
+            b.advance_to(start + done, None, None);
+            i += 1;
+        }
+        assert!(a.history.events.iter().any(|e| e.title.starts_with("Supernova radiation reaches")), "the chain actually ran");
+        assert_eq!(serde_json::to_string(&a).unwrap(), serde_json::to_string(&b).unwrap());
+    }
+
     #[test]
     fn humanity_grows_and_learns() {
         let mut u = Universe::new(small(Scenario::Sol, 11));

@@ -154,6 +154,20 @@ pub fn winter_peak_cooling(energy_mt: f64) -> f64 {
     log_ramp(energy_mt, GLOBAL_THRESHOLD_MT, CHICXULUB_MT, 26.0, 30.0)
 }
 
+/// The documented 30 K physical cap on surface-air winter cooling, shared by impacts and
+/// blast radiation.
+pub const BLAST_WINTER_MAX_K: f64 = 30.0;
+
+/// Peak surface-air cooling (K) of the blast winter a supernova radiation front drives on
+/// arrival: the bounded severity (0 at `FLUENCE_HARM`, 1 at `FLUENCE_STERILE`, clamped
+/// log-ratio of the fluence) scaled linearly onto the same 30 K cap `winter_peak_cooling`
+/// documents for impacts. Units: kelvin of surface-air cooling — identical sign and units
+/// to [`ImpactWinter::peak_k`]. Only `clamp` and `*` are used (pure IEEE-754, bit-exact,
+/// no RNG or transcendentals), so DMath is not required.
+pub fn blast_winter_peak_k(severity: f64) -> f64 {
+    severity.clamp(0.0, 1.0) * BLAST_WINTER_MAX_K
+}
+
 pub fn classify(energy_j: f64, mass_ratio: f64, has_surface: bool) -> ImpactClass {
     let mt = energy_j / MEGATON_TNT_J;
     if mass_ratio >= GIANT_IMPACT_RATIO {

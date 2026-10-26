@@ -255,10 +255,75 @@ pub fn validation_report() -> ValidationReport {
         reference:"https://ssd.jpl.nasa.gov/horizons/manual.html · locally cached 2026-07-01 mid-year and 2027-01-01 endpoint positions, fetched by tools/fetch_horizons.py".into(),metrics,
         limitations:"Two discrete epochs (181-day mid-year and 365-day endpoint) compared with rounded locally cached reference coordinates; the mid-year sample sits half a day after the true 182.5-day midpoint. No covariance/error propagation and no continuous interval-wide bound. Giant-planet states use system barycentres. Missing J2, tides and small-body perturbations matter; the Earth–Moon residual is not independently attributed. Energy and angular-momentum drift are Newtonian diagnostics evaluated on a 1PN configuration, so their thresholds are deliberately loose acceptance guards only. Regression thresholds are historical acceptance guards, not uncertainties or a research-precision target.".into()});
     }
+    // Analytic greenhouse validation: hand-computed equilibrium fixtures, the
+    // uncalibrated Earth regression, the CO2-doubling band and the ice-albedo
+    // collapse (docs/CLIMATE{,_DESIGN,_VALIDATION}.md).
+    {
+        use crate::planet::environment::{
+            equilibrium_temperature, ice_albedo_luminosity_sweep, update_climate,
+        };
+        // Hand-computed radiative-equilibrium fixtures (pure IEEE arithmetic).
+        let eq_1 = equilibrium_temperature(1.0, 1.0, 0.0);
+        let eq_03 = equilibrium_temperature(1.0, 1.0, 0.3);
+        let eq_4 = equilibrium_temperature(4.0, 1.0, 0.3);
+        let fixture_error = (eq_1 - 278.6)
+            .abs()
+            .max((eq_03 - 254.83).abs())
+            .max((eq_4 - std::f64::consts::SQRT_2 * eq_03).abs());
+        // Earth's surface temperature with the calibration offset forced to zero.
+        let sys = sol::sol_system();
+        let ei = sys.find_body("Earth").expect("Sol has Earth");
+        let mut earth = sys.bodies[ei].clone();
+        earth.climate_bias = 0.0;
+        update_climate(&mut earth, &sys.star, 0.0, sys.stellar_distance(ei));
+        let earth_error = (earth.temperature - 288.0).abs();
+        // CO2 doubling: deficit form — 0 while ΔT stays inside the published 1.5–6 K band.
+        let mut doubled = earth.clone();
+        doubled.atmosphere.co2 *= 2.0;
+        update_climate(&mut doubled, &sys.star, 0.0, sys.stellar_distance(ei));
+        let dt_doubling = doubled.temperature - earth.temperature;
+        let doubling_out_of_band = if dt_doubling < 1.5 {
+            1.5 - dt_doubling
+        } else if dt_doubling > 6.0 {
+            dt_doubling - 6.0
+        } else {
+            0.0
+        };
+        // Ice–albedo collapse: the largest adjacent temperature drop of the sweep.
+        let sweep = ice_albedo_luminosity_sweep();
+        let jump = sweep
+            .windows(2)
+            .map(|w| (w[0].1 - w[1].1).max(0.0))
+            .fold(0.0_f64, f64::max);
+        let missing_jump = (10.0 - jump).max(0.0);
+        cases.push(ValidationCase {
+            id: "climate-analytic-greenhouse".into(),
+            name: "0-D grey greenhouse · analytic fixtures".into(),
+            model: "Radiative equilibrium + grey greenhouse optical depth, four-pass ice/albedo feedback".into(),
+            inputs: serde_json::json!({
+                "equilibrium_fixtures": [
+                    {"luminosity_lsun": 1.0, "distance_au": 1.0, "albedo": 0.0},
+                    {"luminosity_lsun": 1.0, "distance_au": 1.0, "albedo": 0.3},
+                    {"luminosity_lsun": 4.0, "distance_au": 1.0, "albedo": 0.3}
+                ],
+                "earth_case": {"calibration_offset_K": 0.0, "co2_doubling": true, "observed_surface_K": 288.0},
+                "ice_albedo_sweep": {"luminosity_from_lsun": 1.0, "luminosity_to_lsun": 0.7, "step_lsun": 0.01, "distance_au": 1.0, "body": "Earth-like, real=false, climate_bias=0, albedo=0.3, water=1.0", "jump_bound_K": 10.0}
+            }),
+            reference: "Hand-computed radiative-equilibrium identities (278.6 K, 278.6·0.7^¼, √2 homogeneity), Earth's observed ~288 K global mean surface temperature, the published 1.5–6 K equilibrium CO2-doubling range, and the model's own ice–albedo threshold".into(),
+            metrics: vec![
+                metric("equilibrium_fixture_error_K", fixture_error, "K", 0.01),
+                // ~10× the observed 0.54 K (build-61 historical acceptance guard).
+                metric("earth_surface_temperature_error_K", earth_error, "K", 5.4141),
+                metric("co2_doubling_out_of_band_K", doubling_out_of_band, "K", 0.01),
+                metric("ice_albedo_missing_jump_K", missing_jump, "K", 0.01),
+            ],
+            limitations: "Analytic self-consistency fixtures of the 0-D grey greenhouse, not an observational climate validation: the equilibrium identities are true by construction, the Earth case is checked against one observed global-mean number without latitude/season structure, the CO2-doubling check only asserts the published 1.5–6 K band, and the ice-albedo sweep is a threshold-existence check on this model with a 1-bar Earth air (the frozen side keeps its water-vapour greenhouse, so the collapse gap is ~15 K, not the ~20 K a dry model would give). No regional/GCM behaviour, spectral transfer or uncertainty quantification is covered.".into(),
+        });
+    }
     let passes = cases
         .iter()
         .all(|c| !c.metrics.is_empty() && c.metrics.iter().all(|m| m.passes_regression));
-    ValidationReport{format:"cosmogon-model-validation".into(),schema_version:1,app_version:env!("CARGO_PKG_VERSION").into(),physics_engine:save::PHYSICS_ENGINE.into(),cases,passes_regression:passes,limitations:vec!["Covers only these explicitly described orbital fixtures. Climate, stellar, collision and civilization models are not validated by this report.".into(),"Results are calculated at request time using the installed engine. They do not certify every sandbox, mission planning, observational reduction or long-term accuracy.".into(),"No measured uncertainty/covariance is available for these exported cached reference fixtures.".into()]}
+    ValidationReport{format:"cosmogon-model-validation".into(),schema_version:1,app_version:env!("CARGO_PKG_VERSION").into(),physics_engine:save::PHYSICS_ENGINE.into(),cases,passes_regression:passes,limitations:vec!["Covers only these explicitly described orbital fixtures plus the analytic greenhouse climate fixtures. Stellar, collision and civilization models are not validated by this report, and the climate case bounds 0-D analytic behaviour only — regional/GCM climate response remains unvalidated.".into(),"Results are calculated at request time using the installed engine. They do not certify every sandbox, mission planning, observational reduction or long-term accuracy.".into(),"No measured uncertainty/covariance is available for these exported cached reference fixtures.".into()]}
 }
 
 impl ValidationReport {
@@ -311,7 +376,7 @@ mod tests {
             serde_json::to_string(&a).unwrap(),
             serde_json::to_string(&b).unwrap()
         );
-        assert_eq!(a.cases.len(), 6);
+        assert_eq!(a.cases.len(), 7);
         // Circular: return-position error shrinks with finer steps.
         assert!(a.cases[0].metrics[0].value > a.cases[1].metrics[0].value);
         // Elliptical: return-position error shrinks with finer steps.
@@ -343,5 +408,18 @@ mod tests {
             m.quantity == "relative_angular_momentum_drift" && m.passes_regression
         }));
         assert!(a.cases.iter().all(|c| !c.limitations.is_empty()));
+        // Climate case: four analytic greenhouse metrics, all within their guards.
+        assert_eq!(a.cases[6].id, "climate-analytic-greenhouse");
+        assert_eq!(a.cases[6].metrics.len(), 4);
+        for m in &a.cases[6].metrics {
+            assert!(m.passes_regression, "{}: {} > {}", m.quantity, m.value, m.regression_limit);
+        }
+        // The CO2-doubling metric is a pure deficit form: in-band means exactly zero.
+        let doubling = a.cases[6]
+            .metrics
+            .iter()
+            .find(|m| m.quantity == "co2_doubling_out_of_band_K")
+            .expect("doubling metric");
+        assert_eq!(doubling.value, 0.0);
     }
 }

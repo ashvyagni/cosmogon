@@ -33,7 +33,9 @@ context, epoch, frame, integrator conditions and actual computed metrics. Its 15
 limits are historical regression guards, not uncertainties or acceptable research precision.
 Earth–Moon error is not independently attributed. J2, tides and small-body perturbations are missing.
 No interval-wide bound, covariance propagation or external-integrator comparison is supplied. These
-fixtures do not validate climate, stellar, collision or civilization models.
+fixtures do not validate stellar, collision or civilization models; climate is covered separately
+by the analytic greenhouse case (`climate-analytic-greenhouse`), which pins 0-D model
+self-consistency rather than observational accuracy (see [CLIMATE_VALIDATION](CLIMATE_VALIDATION.md)).
 
 ## Workflow evidence
 

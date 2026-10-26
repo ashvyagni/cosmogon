@@ -20,9 +20,10 @@ use serde::{Deserialize, Serialize};
 use crate::astro::star::{StarKind, StellarPhase};
 use crate::astro::{Orbit, Removal, RemovalCause, StarSystem, G, LIGHT_YEAR, SPEED_OF_LIGHT};
 use crate::history::{Category, Event};
+use crate::impact::ImpactWinter;
 use crate::life::Stage;
-use crate::time::SECONDS_PER_YEAR;
-use crate::Universe;
+use crate::time::{group_digits, SECONDS_PER_YEAR};
+use crate::{BodyRef, Universe};
 
 /// Kinetic energy of core-collapse supernova ejecta (J).
 pub const SUPERNOVA_ENERGY: f64 = 1.0e44;
@@ -398,6 +399,35 @@ impl Universe {
                     continue;
                 }
                 let severity = ((fluence / FLUENCE_HARM).log10() / (FLUENCE_STERILE / FLUENCE_HARM).log10()).clamp(0.0, 1.0);
+                let peak = crate::impact::blast_winter_peak_k(severity);
+                // Climate forcing first (build 61): at arrival every surface world takes
+                // the blast winter — deliberately *before* the biosphere gate below, so
+                // lifeless and sterile worlds cool too. The Chronicle event stays gated
+                // on an active biosphere. Pre-refresh state feeds the event's detail.
+                let mut pre: Vec<(usize, f64, f64)> = Vec::new();
+                if peak > 0.05 {
+                    for j in 0..self.systems[s].bodies.len() {
+                        let b = &self.systems[s].bodies[j];
+                        if !b.exists() || !b.kind.has_surface() {
+                            continue;
+                        }
+                        let hab = self.biospheres.iter().find(|x| x.system == s as u32 && x.body == j as u32).map(|x| x.habitability.score).unwrap_or(0.0);
+                        pre.push((j, b.temperature, hab));
+                        // Stack onto an active winter: restart the decay clock with
+                        // peak = max(existing instantaneous cooling, new peak), so
+                        // simultaneous blasts stay deterministic and within the 30 K
+                        // cap. Forcing never touches `climate_bias` (that is the
+                        // real-body calibration offset).
+                        let body = &mut self.systems[s].bodies[j];
+                        let peak_now = body.impact_winter.map(|w| w.cooling_at(t)).unwrap_or(0.0).max(peak);
+                        body.impact_winter = Some(ImpactWinter { start: t, peak_k: peak_now, efold_years: ImpactWinter::EFOLD_YEARS });
+                        self.refresh_body_environment(s, j, t);
+                    }
+                    // Static universes schedule no environment task; make sure the
+                    // winter still decays and clears there (`ensure_environment_task`
+                    // now also watches for active winters).
+                    self.ensure_environment_task();
+                }
                 for j in 0..self.systems[s].bodies.len() {
                     if !self.systems[s].bodies[j].exists() {
                         continue;
@@ -408,6 +438,31 @@ impl Universe {
                         self.sterilise_world(s, j, t, &format!("radiation from the supernova of {source}"));
                         continue;
                     }
+                    // Chronicle detail: the causal chain (climate → habitability →
+                    // capacity), read around the arrival refresh above. The civ's
+                    // capacity is its cached value, recomputed at the next civ step
+                    // (documented one-step staleness in docs/CLIMATE_DESIGN.md).
+                    let (temp_before, hab_before) = pre.iter().find(|(jj, _, _)| *jj == j).copied().map(|(_, tp, hb)| (tp, hb)).unwrap_or_else(|| (self.systems[s].bodies[j].temperature, self.biospheres[bi2].habitability.score));
+                    let temp_after = self.systems[s].bodies[j].temperature;
+                    let hab_after = self.biospheres[bi2].habitability.score;
+                    let winter_k = self.systems[s].bodies[j].impact_winter.map(|w| w.peak_k).unwrap_or(peak);
+                    let cap_term = self
+                        .civ_on(BodyRef { system: s as u32, body: j as u32 })
+                        .map(|c| format!(", capacity {}", group_digits(c.capacity)))
+                        .unwrap_or_default();
+                    let detail = format!(
+                        "The explosion of {source}, {:.1} light-years away, strips the ozone layer: {:.0}% of species are lost. Radiation severity {:.0}%, winter −{:.1} K, temperature {:.1} K → {:.1} K ({:+.1} K), habitability {:.0} % → {:.0} %{}.",
+                        dist / LIGHT_YEAR,
+                        80.0 * severity,
+                        severity * 100.0,
+                        winter_k,
+                        temp_before,
+                        temp_after,
+                        temp_after - temp_before,
+                        hab_before * 100.0,
+                        hab_after * 100.0,
+                        cap_term
+                    );
                     let bio = &mut self.biospheres[bi2];
                     bio.biodiversity *= 1.0 - 0.8 * severity;
                     bio.biomass *= 1.0 - 0.5 * severity;
@@ -421,7 +476,7 @@ impl Universe {
                         category: Category::Life,
                         importance: 5,
                         title: format!("Supernova radiation reaches {name}"),
-                        detail: format!("The explosion of {source}, {:.1} light-years away, strips the ozone layer: {:.0}% of species are lost.", dist / LIGHT_YEAR, 80.0 * severity),
+                        detail,
                         system: Some(s as u32),
                         body: Some(j as u32),
                         civ: None,
@@ -433,17 +488,67 @@ impl Universe {
     }
 }
 
+/// Energy (J) delivering `severity` (0 = harm threshold, 1 = sterility threshold) at
+/// `dist_m`: solved backwards from the real distance from the exact severity formula in
+/// `propagate_blasts`, so tests invent no constants. Test-only (shared by the chain
+/// tests in `stellar.rs`, `universe.rs` and `sandbox.rs`); pure IEEE ops.
+#[cfg(test)]
+pub(crate) fn energy_for_severity(dist_m: f64, severity: f64) -> f64 {
+    let fluence = FLUENCE_HARM * 10f64.powf(severity * (FLUENCE_STERILE / FLUENCE_HARM).log10());
+    fluence * 4.0 * std::f64::consts::PI * dist_m * dist_m / RADIATION_FRACTION
+}
+
+/// Index of the system nearest the Sun (asserted to exist by callers).
+#[cfg(test)]
+pub(crate) fn nearest_to_sun(u: &Universe) -> usize {
+    (1..u.systems.len()).min_by(|&a, &b| u.systems[a].position.length().total_cmp(&u.systems[b].position.length())).expect("neighbour system")
+}
+
+/// Fire a blast from the nearest neighbour at the Sun's system with the given severity
+/// on arrival at system 0; returns the distance (m).
+#[cfg(test)]
+pub(crate) fn inject_blast(u: &mut Universe, severity: f64) -> f64 {
+    let n = nearest_to_sun(u);
+    let dist = u.systems[n].position.length();
+    u.blasts.push(Blast { system: n as u32, time: u.time, energy: energy_for_severity(dist, severity), reached: vec![n as u32] });
+    u.ensure_star_task();
+    dist
+}
+
+/// The stellar task's yearly grid: a blast's arrival is first stepped at or after
+/// `t0 + d/c` (`STAR_PERIOD` = 1 yr).
+#[cfg(test)]
+pub(crate) fn arrival_grid(t0: f64, dist: f64) -> f64 {
+    t0 + (dist / SPEED_OF_LIGHT / SECONDS_PER_YEAR).ceil() * SECONDS_PER_YEAR
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::astro::star::Star;
-    use crate::time::SECONDS_PER_GYR;
+    use crate::time::{SECONDS_PER_DAY, SECONDS_PER_GYR};
     use crate::{BodyRef, Scenario, UniverseSettings};
 
     fn lab_kepler() -> Universe {
         let mut u = Universe::new(UniverseSettings { scenario: Scenario::Sol, seed: 3, ..Default::default() });
         u.civs.clear();
         u
+    }
+
+    /// A static Sol universe: system 0 is the real Solar System, five procedural
+    /// neighbours; no system is dynamic, so only scheduled clocks run.
+    fn static_sol(seed: u64) -> Universe {
+        Universe::new(UniverseSettings { scenario: Scenario::Sol, seed, system_count: 6, ..Default::default() })
+    }
+
+    /// Index of an existing surface body of system 0 with no active biosphere.
+    fn lifeless_surface_body(u: &Universe) -> usize {
+        (0..u.systems[0].bodies.len())
+            .find(|&j| {
+                let b = &u.systems[0].bodies[j];
+                b.exists() && b.kind.has_surface() && u.biosphere(BodyRef { system: 0, body: j as u32 }).is_none_or(|bio| bio.stage == Stage::Sterile)
+            })
+            .expect("Sol must have a lifeless surface world")
     }
 
     #[test]
@@ -486,6 +591,185 @@ mod tests {
         assert!(matches!(saturn.removed.map(|r| r.cause), Some(RemovalCause::Ejected)), "{:?}", saturn.removed);
         assert!(u.history.events.iter().any(|e| e.title.starts_with("Supernova!")));
         let _ = SECONDS_PER_GYR;
+    }
+
+    // ── Build 61: blast → climate chain ─────────────────────────────────────
+
+    /// Climate forcing must land before the biosphere gate: a world whose biosphere is
+    /// sterile still cools, while the Chronicle event stays biosphere-gated.
+    #[test]
+    fn blast_forcing_reaches_worlds_without_biospheres() {
+        let mut u = static_sol(42);
+        let lifeless = lifeless_surface_body(&u);
+        let name = u.systems[0].bodies[lifeless].name.clone();
+        let temp0 = u.systems[0].bodies[lifeless].temperature;
+        let t0 = u.time;
+        let dist = inject_blast(&mut u, 0.5);
+        let arrive = arrival_grid(t0, dist);
+        u.advance_to(arrive, None, None);
+        assert_eq!(u.time, arrive, "stepped to arrival");
+        // The lifeless world took the winter…
+        let b = &u.systems[0].bodies[lifeless];
+        let w = b.impact_winter.expect("lifeless world must receive blast forcing");
+        assert!(w.peak_k > 0.0 && w.peak_k <= 30.0, "{} K", w.peak_k);
+        let drop = temp0 - b.temperature;
+        assert!(drop > 1.0 && drop <= 30.0, "lifeless {name} cooled {drop} K");
+        // …with no Chronicle event (the event is gated on an active biosphere)…
+        assert!(!u.history.events.iter().any(|e| e.title == format!("Supernova radiation reaches {name}")), "no event for lifeless {name}");
+        // …while living Earth reports it.
+        assert!(u.history.events.iter().any(|e| e.title == "Supernova radiation reaches Earth"));
+    }
+
+    /// The static-system wiring fix: expiry runs in `step_environment`, which must be
+    /// scheduled (and must do its winter branch) even when no system is dynamic.
+    #[test]
+    fn blast_winter_expires_on_static_system() {
+        let mut u = static_sol(42);
+        assert!(u.systems.iter().all(|s| !s.is_dynamic()), "static precondition");
+        let surface: Vec<usize> = (0..u.systems[0].bodies.len()).filter(|&j| u.systems[0].bodies[j].exists() && u.systems[0].bodies[j].kind.has_surface()).collect();
+        assert!(!surface.is_empty());
+        let temps0: Vec<f64> = surface.iter().map(|&j| u.systems[0].bodies[j].temperature).collect();
+        let t0 = u.time;
+        let dist = inject_blast(&mut u, 0.9);
+        // At arrival every surface world must carry the winter (forcing is not gated on
+        // biospheres)…
+        u.advance_to(arrival_grid(t0, dist), None, None);
+        for &j in &surface {
+            let b = &u.systems[0].bodies[j];
+            let w = b.impact_winter.expect("blast winter applied at arrival");
+            assert!(w.peak_k > 0.05 && w.peak_k <= 30.0, "{}: {} K", b.name, w.peak_k);
+        }
+        // …and 25 yr later it has decayed past the 0.05 K expiry and been cleared.
+        u.advance_by(25.0 * SECONDS_PER_YEAR);
+        // Every surface world: winter gone, temperature back within 0.1 K of pre-blast.
+        for (&j, &before) in surface.iter().zip(&temps0) {
+            let b = &u.systems[0].bodies[j];
+            assert!(b.impact_winter.is_none(), "{} winter still active after 25 yr", b.name);
+            assert!((b.temperature - before).abs() < 0.1, "{}: {before} -> {} K", b.name, b.temperature);
+        }
+    }
+
+    /// A blast saved mid-transit reloads and arrives exactly like an uninterrupted run:
+    /// same event times, same temperature drop.
+    #[test]
+    fn blast_transit_and_winter_survive_save_roundtrip() {
+        let mut u = static_sol(42);
+        let earth0 = u.systems[0].find_body("Earth").unwrap();
+        let temp0 = u.systems[0].bodies[earth0].temperature;
+        let dist = inject_blast(&mut u, 0.5);
+        assert_eq!(u.blasts.len(), 1, "blast in transit");
+        let json = crate::save::to_json(&u, "blast-transit").unwrap();
+        let mut loaded = crate::save::from_json(&json).unwrap();
+        assert_eq!(loaded.blasts, u.blasts, "in-transit blast persists through save/load");
+        let mut straight = u.clone();
+        let total = 10.0 * SECONDS_PER_YEAR;
+        straight.advance_by(total);
+        loaded.advance_by(total);
+        let arrivals = |uu: &Universe| -> Vec<f64> {
+            uu.history.events.iter().filter(|e| e.title.starts_with("Supernova radiation reaches")).map(|e| e.time).collect()
+        };
+        assert!(!arrivals(&straight).is_empty(), "arrival happened");
+        assert_eq!(arrivals(&straight), arrivals(&loaded), "arrival time identical");
+        let earth = straight.systems[0].find_body("Earth").unwrap();
+        let t_straight = straight.systems[0].bodies[earth].temperature;
+        let t_loaded = loaded.systems[0].bodies[earth].temperature;
+        assert_eq!(t_straight, t_loaded, "temperature drop identical");
+        assert!(t_straight < temp0, "Earth actually cooled: {temp0} -> {t_straight}");
+        assert!(dist > 0.0);
+        // Full state (history, winters, scheduler) identical — save/load changed nothing.
+        assert_eq!(serde_json::to_string(&straight).unwrap(), serde_json::to_string(&loaded).unwrap());
+    }
+
+    /// The full chain in one scenario: a blast from a neighbour system drives Earth's
+    /// climate → habitability → civ capacity → Chronicle detail, while a lifeless world
+    /// in the same system cools silently.
+    #[test]
+    fn supernova_blast_drives_climate_habitability_capacity_and_chronicle() {
+        use crate::sandbox::ENVIRONMENT_PERIOD;
+        let mut u = static_sol(42);
+        // Preconditions (asserted, never skipped): neighbour system + living Earth civ.
+        assert_eq!(u.systems.len(), 6, "six systems");
+        let n = nearest_to_sun(&u);
+        let earth = u.systems[0].find_body("Earth").expect("Sol has Earth");
+        let er = BodyRef { system: 0, body: earth as u32 };
+        assert!(u.biosphere(er).is_some_and(|b| b.stage > Stage::Sterile), "Earth alive");
+        assert!(u.civ_on(er).is_some_and(|c| c.is_alive()), "early humans present");
+        let lifeless = lifeless_surface_body(&u);
+        let lifeless_name = u.systems[0].bodies[lifeless].name.clone();
+        let dist = u.systems[n].position.length();
+        assert!(dist / SPEED_OF_LIGHT > 1.2 * SECONDS_PER_YEAR, "seed 42: arrival far enough out for a civ step first ({:.2} ly)", dist / LIGHT_YEAR);
+        let t0 = u.time;
+        let energy = energy_for_severity(dist, 0.5);
+        u.blasts.push(Blast { system: n as u32, time: t0, energy, reached: vec![n as u32] });
+        u.ensure_star_task();
+        let arrive = t0 + dist / SPEED_OF_LIGHT;
+        let arrive_grid = arrival_grid(t0, dist);
+        let peak = 15.0; // severity 0.5 → 0.5 · 30 K
+
+        // Phase A — just before arrival: baseline climate, habitability, capacity.
+        u.advance_to(arrive - SECONDS_PER_DAY, None, None);
+        let temp0 = u.systems[0].bodies[earth].temperature;
+        let hab0 = u.biosphere(er).unwrap().habitability.score;
+        let cap0 = u.civ_on(er).unwrap().capacity;
+        assert!(cap0 > 0.0, "civilization stepped before arrival: capacity {cap0}");
+        let lifeless0 = u.systems[0].bodies[lifeless].temperature;
+        assert!(u.history.events.iter().all(|e| !e.title.starts_with("Supernova radiation reaches")), "not arrived yet");
+
+        // Phase B — arrival + the first environment refresh (10 d later).
+        u.advance_to(arrive_grid + ENVIRONMENT_PERIOD, None, None);
+        let (ev_time, ev_detail) = {
+            let ev = u.history.events.iter().find(|e| e.title == "Supernova radiation reaches Earth").expect("Chronicle event");
+            (ev.time, ev.detail.clone())
+        };
+        assert!(ev_time >= arrive && ev_time <= arrive + SECONDS_PER_YEAR, "event at {:.2} yr after t0, arrival {:.2} yr", (ev_time - t0) / SECONDS_PER_YEAR, (arrive - t0) / SECONDS_PER_YEAR);
+        // T4 surfacing: the detail carries the causal chain.
+        for term in ["habitability", "capacity", "K", "severity", "winter"] {
+            assert!(ev_detail.contains(term), "event detail missing {term:?}: {ev_detail}");
+        }
+        // ΔT = peak·exp(−(t_assert − t_event)/3 yr) within 1 %; bounded 0 < drop ≤ 30 K.
+        let drop = temp0 - u.systems[0].bodies[earth].temperature;
+        let expected = peak * (-(u.time - ev_time) / (3.0 * SECONDS_PER_YEAR)).exp();
+        assert!(drop > 0.0 && drop <= 30.0, "drop {drop} K");
+        assert!((drop - expected).abs() <= 0.01 * expected, "drop {drop} vs expected {expected}");
+        // Habitability cache fell by more than 0.01 while the winter is near peak.
+        let hab1 = u.biosphere(er).unwrap().habitability.score;
+        assert!(hab0 - hab1 > 0.01, "habitability {hab0} -> {hab1}");
+        // Lifeless body in the same system cooled with no event.
+        let lifeless_drop = lifeless0 - u.systems[0].bodies[lifeless].temperature;
+        assert!(lifeless_drop > 1.0 && lifeless_drop <= 30.0, "lifeless {lifeless_name} cooled {lifeless_drop} K");
+        assert!(!u.history.events.iter().any(|e| e.title == format!("Supernova radiation reaches {lifeless_name}")), "no event for lifeless {lifeless_name}");
+
+        // Phase C — after ≥1 civ step post-arrival: capacity fell.
+        u.advance_to(arrive_grid + SECONDS_PER_YEAR + 20.0 * SECONDS_PER_DAY, None, None);
+        let cap1 = u.civ_on(er).expect("humanity survives").capacity;
+        assert!(cap1 < cap0, "capacity {cap0} -> {cap1}");
+        let drop_end = temp0 - u.systems[0].bodies[earth].temperature;
+        let expected_end = peak * (-(u.time - ev_time) / (3.0 * SECONDS_PER_YEAR)).exp();
+        assert!((drop_end - expected_end).abs() <= 0.01 * expected_end, "drop {drop_end} vs expected {expected_end}");
+    }
+
+    /// The forcing law, pinned as pure arithmetic: severity (the bounded log-ratio of
+    /// fluence between the harm and sterility thresholds) maps linearly onto ≤30 K of
+    /// surface-air cooling — the same physical cap `winter_peak_cooling` documents for
+    /// impacts. Pure IEEE ops (`clamp`, multiply); no DMath or RNG is involved and no
+    /// result here feeds a trajectory outside `ImpactWinter`.
+    #[test]
+    fn blast_winter_is_bounded_and_decays() {
+        use crate::impact::{blast_winter_peak_k, ImpactWinter, BLAST_WINTER_MAX_K};
+        assert_eq!(blast_winter_peak_k(0.0), 0.0);
+        assert_eq!(blast_winter_peak_k(0.5), 15.0);
+        assert_eq!(blast_winter_peak_k(1.0), BLAST_WINTER_MAX_K);
+        // Out-of-range severities clamp instead of overcooling or heating.
+        assert_eq!(blast_winter_peak_k(-0.4), 0.0);
+        assert_eq!(blast_winter_peak_k(7.0), BLAST_WINTER_MAX_K);
+        for s in [0.1, 0.33, 0.9, 1.0] {
+            let peak = blast_winter_peak_k(s);
+            assert!(peak > 0.0 && peak <= 30.0, "severity {s}: {peak} K");
+            let w = ImpactWinter { start: 0.0, peak_k: peak, efold_years: ImpactWinter::EFOLD_YEARS };
+            // Three e-folds leave e⁻³ ≈ 4.98 % of the peak.
+            let after = w.cooling_at(3.0 * ImpactWinter::EFOLD_YEARS * SECONDS_PER_YEAR);
+            assert!(after < 0.05 * peak, "severity {s}: {after} K is not <5% of {peak}");
+        }
     }
 
     #[test]

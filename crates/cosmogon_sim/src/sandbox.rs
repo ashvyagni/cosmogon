@@ -1292,6 +1292,21 @@ impl Universe {
     pub(crate) fn step_environment(&mut self, t: f64) {
         for s in 0..self.systems.len() {
             if !self.systems[s].is_dynamic() {
+                // Static systems do not move, so there is no flux bookkeeping — but a
+                // blast winter can still be running here and must decay and expire.
+                for j in 0..self.systems[s].bodies.len() {
+                    if !self.systems[s].bodies[j].exists() {
+                        continue;
+                    }
+                    match self.systems[s].bodies[j].impact_winter {
+                        Some(w) if w.expired(t) => {
+                            self.systems[s].bodies[j].impact_winter = None;
+                            self.refresh_body_environment(s, j, t);
+                        }
+                        Some(_) => self.refresh_body_environment(s, j, t),
+                        None => {}
+                    }
+                }
                 continue;
             }
             self.roche_disruptions(s, t);
@@ -1315,10 +1330,14 @@ impl Universe {
                 let d = self.systems[s].dynamics.as_ref().unwrap();
                 let (fc, fr) = (d.flux_climate[j], d.flux_reported[j]);
                 let winter = self.systems[s].bodies[j].impact_winter.is_some();
+                // Build 61 — Chronicle causal terms: cached habitability immediately
+                // before/after this iteration's refresh (equal when no refresh ran).
+                let hab_before = self.biosphere(BodyRef { system: s as u32, body: j as u32 }).map(|b| b.habitability.score);
                 if fc <= 0.0 || (f / fc - 1.0).abs() > 0.002 || winter {
                     self.refresh_body_environment(s, j, t);
                     self.systems[s].dynamics.as_mut().unwrap().flux_climate[j] = f;
                 }
+                let hab_after = self.biosphere(BodyRef { system: s as u32, body: j as u32 }).map(|b| b.habitability.score);
                 let surface = self.systems[s].bodies[j].kind.has_surface();
                 let temp = self.systems[s].bodies[j].temperature;
                 let d = self.systems[s].dynamics.as_mut().unwrap();
@@ -1334,20 +1353,35 @@ impl Universe {
                     let el = sys.osculating(sys.top_level(j), t);
                     let name = sys.bodies[j].name.clone();
                     let orbit = if el.is_bound() { format!("orbit now a = {:.4} AU, e = {:.4}", el.semi_major_axis / AU, el.eccentricity) } else { "on an unbound path".to_string() };
-                    let has_civ = self.civ_on(BodyRef { system: s as u32, body: j as u32 }).is_some();
+                    let rj = BodyRef { system: s as u32, body: j as u32 };
+                    let has_civ = self.civ_on(rj).is_some();
+                    // Build 61 — the causal chain in the detail: sunlight → ΔT →
+                    // habitability → capacity (capacity is the civ's cached value,
+                    // recomputed at its next step — one-step staleness, documented
+                    // in docs/CLIMATE_DESIGN.md).
+                    let hab_term = match (hab_before, hab_after) {
+                        (Some(a), Some(b)) => format!(" Habitability {:.0} % → {:.0} %.", a * 100.0, b * 100.0),
+                        _ => String::new(),
+                    };
+                    let cap_term = self
+                        .civ_on(rj)
+                        .map(|c| format!(" Capacity {}.", crate::time::group_digits(c.capacity)))
+                        .unwrap_or_default();
+                    let detail = format!(
+                        "Annual-mean insolation {:.3} S⊕ ({:+.1}% vs the reported baseline, {orbit}). Mean surface temperature {:.1} K → {:.1} K ({:+.1} K) as of {}.{hab_term}{cap_term}",
+                        f,
+                        (f / fr - 1.0) * 100.0,
+                        before,
+                        temp,
+                        temp - before,
+                        format_date(t, self.start_time, self.gregorian())
+                    );
                     self.history.push(Event {
                         time: t,
                         category: Category::Astronomy,
                         importance: if has_civ || (f / fr - 1.0).abs() > 0.1 { 5 } else { 4 },
                         title: format!("{name}: sunlight {:+.1}%", (f / fr - 1.0) * 100.0),
-                        detail: format!(
-                            "Annual-mean insolation {:.3} S⊕ ({orbit}). Mean surface temperature {:.1} K → {:.1} K ({:+.1} K) as of {}.",
-                            f,
-                            before,
-                            temp,
-                            temp - before,
-                            format_date(t, self.start_time, self.gregorian())
-                        ),
+                        detail,
                         system: Some(s as u32),
                         body: Some(j as u32),
                         civ: None,
@@ -1357,9 +1391,11 @@ impl Universe {
         }
     }
 
-    /// Make sure the environment task exists once any system is dynamic.
+    /// Make sure the environment task exists once any system is dynamic — or once a
+    /// blast winter needs periodic refresh anywhere, even in a fully static universe.
     pub(crate) fn ensure_environment_task(&mut self) {
-        if !self.systems.iter().any(|s| s.is_dynamic()) {
+        let has_winter = self.systems.iter().any(|s| s.bodies.iter().any(|b| b.impact_winter.is_some()));
+        if !self.systems.iter().any(|s| s.is_dynamic()) && !has_winter {
             return;
         }
         let env = crate::universe::TASK_ENV;
@@ -1705,6 +1741,34 @@ mod tests {
         let t_after = u.body(e).temperature;
         assert!(t_after > t_before + 10.0, "{t_before} -> {t_after}");
         assert!(u.history.events.iter().any(|ev| ev.title.starts_with("Earth: sunlight +")));
+    }
+
+    /// Build 61 — a star edit flows all the way to the Chronicle: mass ×1.1 changes
+    /// luminosity → insolation → temperature, and the reported event carries the full
+    /// causal chain (insolation %, ΔT in K, habitability and capacity terms).
+    #[test]
+    fn edit_drives_climate_and_chronicle_reports_the_chain() {
+        let mut u = lab();
+        let e = earth(&u);
+        let t0 = u.body(e).temperature;
+        let m0 = u.system(0).star.mass;
+        u.apply_edit(Edit::SetStar { system: 0, property: StarProperty::Mass(1.1 * m0) }).unwrap();
+        // ≥2 environment periods (10 d each).
+        u.advance_by(3.0 * ENVIRONMENT_PERIOD);
+        let t1 = u.body(e).temperature;
+        assert!((t1 - t0).abs() > 1.0, "temperature must respond: {t0} -> {t1}");
+        let ev = u
+            .history
+            .events
+            .iter()
+            .find(|ev| ev.title.starts_with("Earth: sunlight"))
+            .expect("Chronicle insolation event");
+        assert!(ev.title.contains('%'), "insolation % in title: {}", ev.title);
+        assert!(ev.detail.contains('K'), "ΔT in K: {}", ev.detail);
+        assert!(ev.detail.contains("Mean surface temperature"), "{}", ev.detail);
+        assert!(ev.detail.contains("Habitability"), "habitability term: {}", ev.detail);
+        assert!(ev.detail.contains("Capacity"), "capacity term: {}", ev.detail);
+        assert!(ev.detail.contains("S⊕"), "insolation value: {}", ev.detail);
     }
 
     #[test]

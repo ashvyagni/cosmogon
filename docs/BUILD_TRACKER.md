@@ -112,7 +112,7 @@ Released baselines: v0.3.0, v0.5.0, **v1.0.0** (`0411e9d`) — all preserved; ta
 
 | # | Build | Status |
 | --- | --- | --- |
-| 61 | Validated climate/consequence propagation between systems | ⬜ |
+| 61 | ~~Validated climate/consequence propagation between systems~~ | ✅ **DONE** |
 | 62 | Recorded history and Chronicle completeness | ⬜ |
 | 63 | Visible civilization infrastructure and economic/spatial presence | ⬜ |
 | 64 | Intervention consequences end-to-end with evidence | ⬜ |
