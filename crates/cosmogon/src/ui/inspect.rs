@@ -6,7 +6,7 @@ use cosmogon_sim::astro::{BodyKind, ResourceKind, AU, LIGHT_YEAR};
 use cosmogon_sim::civ::knowledge::Domain;
 use cosmogon_sim::civ::tech::{Status, TechGraph};
 use cosmogon_sim::civ::{environment_for, CivStatus, Civilization};
-use cosmogon_sim::history::Category;
+use cosmogon_sim::history::{Category, ChronicleFilter, Event};
 use cosmogon_sim::life::Stage;
 use cosmogon_sim::time::{format_date, format_duration, group_digits, SECONDS_PER_YEAR};
 use cosmogon_sim::{BodyRef, Universe};
@@ -89,29 +89,101 @@ pub fn left_panel(mut contexts: EguiContexts, mut ui_state: ResMut<UiState>, mut
             }
             LeftTab::Chronicle => {
                 ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new("View").color(MUTED));
+                    ui.selectable_value(&mut ui_state.chronicle_mode, false, "Timeline");
+                    ui.selectable_value(&mut ui_state.chronicle_mode, true, "Legends");
+                });
+                ui.horizontal(|ui| {
                     ui.label(egui::RichText::new("Show").color(MUTED));
                     ui.selectable_value(&mut ui_state.chronicle_min_importance, 5, "milestones");
                     ui.selectable_value(&mut ui_state.chronicle_min_importance, 4, "major");
                     ui.selectable_value(&mut ui_state.chronicle_min_importance, 2, "all");
                 });
-                let min = ui_state.chronicle_min_importance;
-                for e in u.history.events.iter().rev().filter(|e| e.importance >= min).take(400) {
-                    let color = match e.category {
-                        Category::Life => LIFE,
-                        Category::Technology | Category::Civilization | Category::Space | Category::Contact => CIV,
-                        Category::Disaster | Category::War => DANGER,
-                        Category::Astronomy => TEXT,
-                    };
-                    ui.horizontal_wrapped(|ui| {
-                        ui.label(egui::RichText::new(format_date(e.time, u.start_time, u.gregorian())).size(11.0).color(MUTED));
-                        let r = ui.add(egui::Label::new(egui::RichText::new(&e.title).color(color)).sense(egui::Sense::click()));
-                        if r.on_hover_text(&e.detail).clicked() {
-                            if let (Some(s), Some(b)) = (e.system, e.body) {
-                                action = Some(Action::Focus(Target::Body(BodyRef { system: s, body: b })));
-                            }
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(egui::RichText::new("Categories").color(MUTED));
+                    for c in Category::ALL {
+                        let on = ui_state.chronicle_categories[c.index()];
+                        let text = egui::RichText::new(c.label()).size(11.0).color(if on { TEXT } else { MUTED });
+                        let mut btn = egui::Button::new(text).corner_radius(5).min_size(egui::vec2(0.0, 18.0));
+                        btn = if on { btn.fill(egui::Color32::from_rgb(58, 45, 22)) } else { btn.fill(egui::Color32::TRANSPARENT) };
+                        if ui.add(btn).clicked() {
+                            ui_state.chronicle_categories[c.index()] = !on;
                         }
-                    });
+                    }
+                });
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new("Search").color(MUTED));
+                    ui.add(egui::TextEdit::singleline(&mut ui_state.chronicle_search).hint_text("title or detail"));
+                });
+                ui.horizontal(|ui| {
+                    if sim.selected.is_some() {
+                        ui.checkbox(&mut ui_state.chronicle_scope, "Scope to selection");
+                    } else {
+                        ui_state.chronicle_scope = false;
+                        let mut off = false;
+                        ui.add_enabled(false, egui::Checkbox::new(&mut off, egui::RichText::new("Scope to selection — select a world")));
+                    }
+                });
+                let needle = ui_state.chronicle_search.trim().to_string();
+                let base = ChronicleFilter {
+                    min_importance: ui_state.chronicle_min_importance,
+                    categories: ui_state.chronicle_categories,
+                    text: if needle.is_empty() { None } else { Some(needle) },
+                    system: None,
+                    body: None,
+                    civ: None,
+                };
+                // Legends always scopes to the selection; Timeline scopes only on the checkbox.
+                let scoped = ui_state.chronicle_mode || ui_state.chronicle_scope;
+                let filters = chronicle_scope_filters(u, base, if scoped { sim.selected } else { None });
+                // The export bundle writes this primary filter (build 62: "exports the
+                // current filter"); the union's cross-location civ rows are a view extra.
+                let primary = filters[0].clone();
+                let idx = chronicle_union(u, &filters);
+                let n = idx.len();
+                let m = n.min(400);
+                ui.label(egui::RichText::new(format!("{n} events (showing {m})")).size(11.0).color(MUTED));
+                if !ui_state.chronicle_mode {
+                    // Timeline: newest first; the historical render cap of 400 stays, no longer silent.
+                    for &i in idx.iter().rev().take(400) {
+                        chronicle_row(ui, u, &u.history.events[i], &mut action);
+                    }
+                } else {
+                    // Legends: oldest first, grouped into decade-of-magnitude eras.
+                    let mut last_era = String::new();
+                    for &i in idx.iter().take(400) {
+                        let e = &u.history.events[i];
+                        let years = ((e.time - u.start_time) / SECONDS_PER_YEAR).max(0.0);
+                        let era = era_label(years);
+                        if era != last_era {
+                            if !last_era.is_empty() {
+                                ui.separator();
+                            }
+                            ui.label(egui::RichText::new(era.as_str()).strong().size(12.0).color(ACCENT));
+                            last_era = era;
+                        }
+                        chronicle_row(ui, u, e, &mut action);
+                    }
                 }
+                egui::CollapsingHeader::new("Export").show(ui, |ui| {
+                    if ui_state.chronicle_export_path.is_empty() {
+                        ui_state.chronicle_export_path = crate::persistence::data_dir().join("chronicle").display().to_string();
+                    }
+                    ui.label("JSON + CSV with a manifest. Existing folders are protected. Exports the current filter.");
+                    ui.text_edit_singleline(&mut ui_state.chronicle_export_path);
+                    if ui.button("Export Chronicle").clicked() {
+                        let count = u.history.chronicle(&primary).len();
+                        let path = std::path::Path::new(&ui_state.chronicle_export_path);
+                        let result = cosmogon_sim::chronicle::export(u, &primary, path);
+                        ui_state.chronicle_export_status = Some(match result {
+                            Ok(()) => format!("Saved {count} events to {}", ui_state.chronicle_export_path),
+                            Err(e) => format!("Could not export: {e}"),
+                        });
+                    }
+                    if let Some(message) = &ui_state.chronicle_export_status {
+                        ui.label(message);
+                    }
+                });
             }
             LeftTab::Civilizations => {
                 if u.civs.is_empty() {
@@ -141,6 +213,71 @@ pub fn left_panel(mut contexts: EguiContexts, mut ui_state: ResMut<UiState>, mut
         None => {}
     }
     Ok(())
+}
+
+/// Scope filters for the current selection: the primary filter first (importance,
+/// categories and search text, plus `system`/`body` when scoped), then one extra filter
+/// per civ sitting on a selected body — the union shows that world's full narrative,
+/// including the civ's events recorded elsewhere. `selected = None` is universe-wide.
+fn chronicle_scope_filters(u: &Universe, base: ChronicleFilter, selected: Option<Target>) -> Vec<ChronicleFilter> {
+    let Some(t) = selected else { return vec![base]; };
+    match t {
+        Target::Star(s) => vec![ChronicleFilter { system: Some(s), ..base }],
+        Target::Body(r) => {
+            let mut filters = vec![ChronicleFilter { system: Some(r.system), body: Some(r.body), ..base.clone() }];
+            for c in u.civs.iter().filter(|c| c.system == r.system && c.body == r.body) {
+                filters.push(ChronicleFilter { system: None, body: None, civ: Some(c.id), ..base.clone() });
+            }
+            filters
+        }
+    }
+}
+
+/// Union of several Chronicle queries in the shared deterministic order (chronological;
+/// same-time events keep their push order), deduplicated by vector index.
+fn chronicle_union(u: &Universe, filters: &[ChronicleFilter]) -> Vec<usize> {
+    let mut pairs: Vec<(f64, usize)> = Vec::new();
+    for f in filters {
+        for i in u.history.chronicle_indices(f) {
+            pairs.push((u.history.events[i].time, i));
+        }
+    }
+    pairs.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+    pairs.dedup_by(|a, b| a.1 == b.1);
+    pairs.into_iter().map(|(_, i)| i).collect()
+}
+
+/// Era bucket by years since the run started: "The first year", then decade-of-magnitude
+/// powers of ten ("Years 1–10", "Years 10–100", … — at most ~15 groups in a 14-By run).
+fn era_label(years: f64) -> String {
+    if years < 1.0 {
+        return "The first year".into();
+    }
+    let decade = 10f64.powf(years.log10().floor());
+    format!("Years {}–{}", group_digits(decade), group_digits(decade * 10.0))
+}
+
+/// Category colour of a Chronicle row (shared by Timeline and Legends).
+fn category_color(c: Category) -> egui::Color32 {
+    match c {
+        Category::Life => LIFE,
+        Category::Technology | Category::Civilization | Category::Space | Category::Contact => CIV,
+        Category::Disaster | Category::War => DANGER,
+        Category::Astronomy => TEXT,
+    }
+}
+
+/// One Chronicle row: date + clickable coloured title, detail on hover (shared styling).
+fn chronicle_row(ui: &mut egui::Ui, u: &Universe, e: &Event, action: &mut Option<Action>) {
+    ui.horizontal_wrapped(|ui| {
+        ui.label(egui::RichText::new(format_date(e.time, u.start_time, u.gregorian())).size(11.0).color(MUTED));
+        let r = ui.add(egui::Label::new(egui::RichText::new(&e.title).color(category_color(e.category))).sense(egui::Sense::click()));
+        if r.on_hover_text(&e.detail).clicked() {
+            if let (Some(s), Some(b)) = (e.system, e.body) {
+                *action = Some(Action::Focus(Target::Body(BodyRef { system: s, body: b })));
+            }
+        }
+    });
 }
 
 /// Display colour of a body's albedo (normalised so dark worlds still read).

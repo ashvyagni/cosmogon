@@ -6,6 +6,9 @@
 //!                    [--save PATH]
 //! cosmogon-cli check [--seed N] [--scenario ...] [--years Y]   # determinism self-check
 //! cosmogon-cli survey [--seeds N] [--scenario ...] [--years Y] [--life ...]  # outcome statistics
+//! cosmogon-cli chronicle --output NEW_DIR [--initial SAVE | --seed N --scenario S --years Y]
+//!                    [--min-importance 1..5] [--category NAME ...] [--search TEXT]
+//!                    [--system N [--body N]] [--civ N]  # protected JSON+CSV export
 //! ```
 
 use std::time::Instant;
@@ -85,6 +88,11 @@ struct Args {
     systems: u32,
     min_importance: u8,
     save: Option<String>,
+    categories: Vec<String>,
+    search: Option<String>,
+    system: Option<u32>,
+    body: Option<u32>,
+    civ: Option<u32>,
 }
 
 fn number<T: std::str::FromStr>(text: String, flag: &str) -> Result<T, String> {
@@ -162,6 +170,11 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Args, String> {
         systems: 24,
         min_importance: 3,
         save: None,
+        categories: vec![],
+        search: None,
+        system: None,
+        body: None,
+        civ: None,
     };
     let mut it = args;
     let mut explicit_scenario = false;
@@ -170,6 +183,8 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Args, String> {
     let mut explicit_coordinates = false;
     let mut explicit_samples = false;
     let mut explicit_sweep = false;
+    let mut explicit_years = false;
+    let mut explicit_min_importance = false;
     if let Some(c) = it.next() {
         a.cmd = c;
         if matches!(a.cmd.as_str(),"habitat"|"habitat-sweep") {a.samples=25;a.interval_days=1.0/24.0;a.scenario=Scenario::SolarSystemLab;}
@@ -235,6 +250,8 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Args, String> {
         if matches!(a.cmd.as_str(),"habitat-definition"|"habitat-crop-definition"|"habitat-setup") && !matches!(flag.as_str(),"--initial"|"--output"|"--target"|"--latitude"|"--longitude"|"--seed"|"--scenario") {return Err(format!("{flag} is not a habitat-definition option"));}
         if a.cmd=="habitat-sweep" && !matches!(flag.as_str(),"--definition"|"--habitat-id"|"--initial"|"--output"|"--samples"|"--interval-days"|"--parameter"|"--from"|"--to"|"--runs"|"--band") {return Err(format!("{flag} is not a habitat sweep option"));}
         if a.cmd=="habitat-compare" && !matches!(flag.as_str(),"--recording"|"--reference"|"--measure"|"--alignment"|"--output") {return Err(format!("{flag} is not a habitat comparison option"));}
+        if matches!(flag.as_str(),"--category"|"--search"|"--system"|"--body"|"--civ") && a.cmd!="chronicle" {return Err(format!("{flag} is a Chronicle option")); }
+        if a.cmd=="chronicle" && !matches!(flag.as_str(),"--initial"|"--seed"|"--scenario"|"--years"|"--output"|"--min-importance"|"--category"|"--search"|"--system"|"--body"|"--civ") {return Err(format!("{flag} is not a chronicle option")); }
         if matches!(flag.as_str(),"--parameter"|"--from"|"--to"|"--runs"|"--samples"|"--interval-days") {explicit_sweep=true;}
         match flag.as_str() {
             "--static-shear" if a.cmd=="contact-hardware" => a.static_shear=true,
@@ -361,10 +378,15 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Args, String> {
             "--measure" => a.measure = Some(val()?),
             "--seed" => {a.seed = number(val()?, &flag)?;explicit_seed=true;},
             "--seeds" => a.seeds = number(val()?, &flag)?,
-            "--years" => a.years = number(val()?, &flag)?,
+            "--years" => {a.years = number(val()?, &flag)?;explicit_years=true;},
             "--systems" => a.systems = number(val()?, &flag)?,
-            "--min-importance" => a.min_importance = number(val()?, &flag)?,
+            "--min-importance" => {a.min_importance = number(val()?, &flag)?;explicit_min_importance=true;},
             "--save" => a.save = Some(val()?),
+            "--category" => {let v=val()?;if cosmogon_sim::history::Category::from_label(&v).is_none() {return Err(format!("Unknown Chronicle category {v}; use astronomy, life, civilization, technology, disaster, war, space or contact"));} a.categories.push(v);},
+            "--search" => a.search = Some(val()?),
+            "--system" => a.system = Some(number(val()?, &flag)?),
+            "--body" => a.body = Some(number(val()?, &flag)?),
+            "--civ" => a.civ = Some(number(val()?, &flag)?),
             "--scenario" => {
                 explicit_scenario = true;
                 a.scenario = match val()?.as_str() {
@@ -485,9 +507,17 @@ if a.geographic_start.as_deref().is_some_and(|p|p.trim().is_empty()) {return Err
     if a.cmd == "survey" && !(1..=1_000_000).contains(&a.seeds) {
         return Err("--seeds must be between 1 and 1000000".into());
     }
+    if a.cmd=="chronicle" {
+        if a.output.as_deref().is_none_or(|p|p.trim().is_empty()) {return Err("chronicle requires --output NEW_DIR".into());}
+        if a.initial.is_some() && (explicit_seed || explicit_scenario || explicit_years) {return Err("Choose a saved --initial world or new --seed/--scenario/--years, not both".into());}
+        if a.body.is_some() && a.system.is_none() {return Err("--body requires --system".into());}
+        if !(1..=5).contains(&a.min_importance) {return Err("--min-importance must be between 1 and 5".into());}
+        if !explicit_min_importance {a.min_importance=1;}
+    }
     Ok(a)
 }
 fn help() {
+    eprintln!("cosmogon-cli chronicle --output NEW_DIR [--initial SAVE | --seed N --scenario S --years Y] [--min-importance 1..5] [--category NAME ...] [--search TEXT] [--system N [--body N]] [--civ N]\nProtected chronicle export: manifest.json + chronicle.json + RFC-4180 chronicle.csv of the recorded history; existing folders are refused; an unfiltered default keeps every importance level");
     eprintln!("cosmogon-cli contact-start [--output NEW_FILE]\ncosmogon-cli contact-hardware [--static-shear --operation-window SECONDS --initial WORLD --target Mars --geographic-start FILE --output NEW_FILE]\nflight-definition --contact-hardware FILE explicitly enables versioned terrain/rigid-body motion; --operation-window adds the modeled solver-integrated surface-operation ledger; no safe landing or delivery");
     eprintln!("cosmogon-cli support-definition [--output NEW_FILE]\ncosmogon-cli flight-support --recording COMPLETE_FLIGHT_DIR [--definition LIMITS_FILE --output NEW_DIR]\ncosmogon-cli support-inspect --recording COMPLETE_SUPPORT_DIR\nConditional actual footprint/force evidence; no attachment or cargo permission");
     eprintln!("cosmogon-cli arrival-start [--output NEW_FILE]\ncosmogon-cli flight-approach --recording COMPLETE_FLIGHT_DIR [--target BODY --output NEW_DIR]\ncosmogon-cli approach-inspect --recording COMPLETE_APPROACH_DIR\nGeographic flight-definition starts: --geographic-start FILE (explicit spherical altitude and east/north/up velocities)");
@@ -837,11 +867,12 @@ fn main() {
             else {println!("{}",serde_json::to_string_pretty(&report).unwrap());}
             if !report.passes_regression {std::process::exit(1);}
         }
+        "chronicle" => {if let Err(e)=chronicle_export(&a) {eprintln!("Chronicle export failed: {e}");std::process::exit(1);}},
         "run" => run(&a),
         "check" => check(&a),
         "survey" => survey(&a),
         "profile" => profile(&a),
-        c => { eprintln!("unknown command {c}; use run | check | survey | profile | models | experiment | sweep | replay | validate"); std::process::exit(1); }
+        c => { eprintln!("unknown command {c}; use run | check | survey | profile | models | experiment | sweep | replay | validate | chronicle"); std::process::exit(1); }
     }
 }
 
@@ -1028,6 +1059,62 @@ fn initial_universe(a: &Args) -> Result<Universe, String> {
     } else {
         Ok(Universe::new(settings(a, a.seed)))
     }
+}
+
+/// Export the recorded history of `--initial SAVE`, or of a fresh world advanced by
+/// `--years`, as a protected `cosmogon-chronicle/1` bundle: `manifest.json` +
+/// `chronicle.json` + RFC-4180 `chronicle.csv`. Scope ids are validated against the
+/// universe before any directory is created.
+fn chronicle_export(a: &Args) -> Result<(), String> {
+    use cosmogon_sim::chronicle;
+    use cosmogon_sim::history::{Category, ChronicleFilter};
+    let mut u = initial_universe(a)?;
+    if a.initial.is_none() {
+        u.advance_by(a.years * SECONDS_PER_YEAR);
+    }
+    if let Some(s) = a.system {
+        if s as usize >= u.systems.len() {
+            return Err(format!("Unknown system {s}; this world has {} systems", u.systems.len()));
+        }
+    }
+    if let Some(b) = a.body {
+        let s = a.system.expect("--body validated with --system") as usize;
+        if b as usize >= u.systems[s].bodies.len() {
+            return Err(format!("Unknown body {b} in system {s}"));
+        }
+    }
+    if let Some(c) = a.civ {
+        if !u.civs.iter().any(|v| v.id == c) {
+            return Err(format!("Unknown civilization id {c}"));
+        }
+    }
+    let mut categories = [false; 8];
+    if a.categories.is_empty() {
+        categories = [true; 8];
+    } else {
+        for name in &a.categories {
+            let c = Category::from_label(name)
+                .ok_or_else(|| format!("Unknown Chronicle category {name}"))?;
+            categories[c.index()] = true;
+        }
+    }
+    let filter = ChronicleFilter {
+        min_importance: a.min_importance,
+        categories,
+        text: a.search.clone(),
+        system: a.system,
+        body: a.body,
+        civ: a.civ,
+    };
+    let path = std::path::Path::new(a.output.as_deref().expect("--output validated"));
+    chronicle::export(&u, &filter, path)?;
+    let rows = chronicle::rows(&u, &filter);
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&chronicle::manifest(&u, &filter, &rows))
+            .expect("finite Chronicle manifest")
+    );
+    Ok(())
 }
 fn batch(a: &Args) -> Result<(), String> {
     use cosmogon_sim::research::{ExperimentDefinition, ParameterSweep, PARAMETERS};
@@ -1807,6 +1894,60 @@ mod argument_tests {
         assert!(args(&["habitat-sweep","--initial","s","--output","o","--from","0","--to","4000","--samples","1"]).is_ok());
         assert!(args(&["habitat-sweep","--initial","s","--output","o","--definition","p","--habitat-id","0"]).is_ok());
         assert!(args(&["habitat-compare","--recording","a","--reference","b","--measure","methane","--alignment","world"]).is_ok());
+    }
+
+    #[test]
+    fn chronicle_arguments_require_output_and_refuse_ignored_flags() {
+        for v in [
+            vec!["chronicle"],
+            vec!["chronicle", "--output", " "],
+            vec!["chronicle", "--output", "o", "--category", "nonsense"],
+            vec!["chronicle", "--output", "o", "--min-importance", "9"],
+            vec!["chronicle", "--output", "o", "--min-importance", "0"],
+            vec!["chronicle", "--output", "o", "--system", "abc"],
+            vec!["chronicle", "--output", "o", "--body", "1"],
+            vec!["chronicle", "--output", "o", "--samples", "3"],
+            vec!["chronicle", "--output", "o", "--life", "teeming"],
+            vec!["chronicle", "--output", "o", "--save", "x"],
+            vec!["chronicle", "--output", "o", "--initial", "s", "--seed", "2"],
+            vec!["chronicle", "--output", "o", "--initial", "s", "--years", "10"],
+        ] {
+            assert!(args(&v).is_err(), "{v:?}");
+        }
+        let a = args(&[
+            "chronicle",
+            "--output",
+            "out",
+            "--min-importance",
+            "4",
+            "--category",
+            "war",
+            "--category",
+            "disaster",
+            "--search",
+            "nuclear",
+            "--system",
+            "0",
+            "--body",
+            "1",
+            "--civ",
+            "7",
+        ])
+        .unwrap();
+        assert_eq!(a.min_importance, 4);
+        assert_eq!(a.categories, ["war", "disaster"]);
+        assert_eq!(a.search.as_deref(), Some("nuclear"));
+        assert_eq!(a.system, Some(0));
+        assert_eq!(a.body, Some(1));
+        assert_eq!(a.civ, Some(7));
+        // The chronicle default exports every importance; --initial worlds are not advanced.
+        let d = args(&["chronicle", "--output", "out"]).unwrap();
+        assert_eq!(d.min_importance, 1);
+        assert!(d.categories.is_empty());
+        // Chronicle-only flags stay refused for other commands.
+        assert!(args(&["run", "--category", "war"]).is_err());
+        assert!(args(&["run", "--search", "war"]).is_err());
+        assert!(args(&["run", "--civ", "1"]).is_err());
     }
 
 }

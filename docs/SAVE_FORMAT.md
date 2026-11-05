@@ -120,6 +120,15 @@ entries/read marks are derived app state and reset on load/rewind; Chronicle rem
 Preference writes use temporary-file replacement and expose failures in the new panels. No simulation
 save fields or golden fingerprint change.
 
+## Chronicle export bundles (`cosmogon-chronicle/1`)
+
+The Chronicle **stays inside `Universe.history`**; build 62 adds no save field. Exported bundles
+(`cosmogon-cli chronicle`, or the Chronicle tab's Export button) are read-only artefacts that
+carry `manifest.json` (`format: "cosmogon-chronicle"`, `schema_version: 1`), `chronicle.json` and
+an RFC-4180 `chronicle.csv`. They are never loaded back as a world and existing folders are never
+overwritten. The in-memory minor-event counter used to keep `push` O(1) is `#[serde(skip)]`, so
+save bytes — and the golden fingerprint — are unchanged in both directions.
+
 ## Research bundles
 
 Research recordings use a separate cosmogon-experiment schema 1 manifest and six-file directory;

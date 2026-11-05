@@ -120,6 +120,16 @@ pub struct UiState {
     pub surface_export_status: Option<String>,
     pub search: String,
     pub chronicle_min_importance: u8,
+    /// Eight category toggles indexed by `Category::index()`; all on by default.
+    pub chronicle_categories: [bool; 8],
+    /// Case-insensitive substring search over title + detail (build 62).
+    pub chronicle_search: String,
+    /// Scope the Timeline list to `sim.selected` (build 62).
+    pub chronicle_scope: bool,
+    /// false = Timeline (newest first), true = Legends (era-grouped narrative).
+    pub chronicle_mode: bool,
+    pub chronicle_export_path: String,
+    pub chronicle_export_status: Option<String>,
     pub menu: MenuScreen,
     pub form: home::NewForm,
     pub saves: Vec<crate::persistence::SaveEntry>,
@@ -196,6 +206,12 @@ impl Default for UiState {
             surface_export_status: None,
             search: String::new(),
             chronicle_min_importance: 4,
+            chronicle_categories: [true; 8],
+            chronicle_search: String::new(),
+            chronicle_scope: false,
+            chronicle_mode: false,
+            chronicle_export_path: String::new(),
+            chronicle_export_status: None,
             menu: MenuScreen::Home,
             form: home::NewForm::default(),
             saves: Vec::new(),
@@ -286,6 +302,8 @@ fn init_ui_state(mut ui: ResMut<UiState>, args: Res<crate::args::Args>) {
         Some("surface") => ui.body_tab = BodyTab::Surface,
         Some("habitat-crop"|"habitat-crop-settings"|"habitat-crop-model"|"habitat-crop-build"|"habitat-recording-balance-heat"|"habitat-recording-balance"|"habitat-recording-balance-electricity"|"habitat-recording-balance-temperature"|"habitat-recording-balance-counters"|"habitat-recording-balance-files"|"habitat-figure" | "habitat" | "habitat-controls" | "habitat-build" | "habitat-model" | "habitat-oxygen" | "habitat-water" | "habitat-humidity" | "habitat-humidity-settings" | "habitat-humidity-model" | "habitat-breach" | "habitat-breach-settings" | "habitat-breach-model" | "habitat-maintenance" | "habitat-maintenance-settings" | "habitat-maintenance-model" | "habitat-settlement" | "habitat-settlement-settings" | "habitat-settlement-model" | "habitat-paired" | "habitat-paired-table" | "habitat-paired-files" | "habitat-paired-replay"|"habitat-graph-layout" | "habitat-recordings" | "habitat-recording-pressure" | "habitat-recording-pressure-change" | "habitat-recording-pressure-breach" | "habitat-recording-pressure-files" | "habitat-recording-why" | "habitat-recording-why-water" | "habitat-recording-why-heat" | "habitat-recording-why-air" | "habitat-recording-why-evidence" | "habitat-experiments" | "habitat-why" | "habitat-why-water" | "habitat-why-heat" | "habitat-why-air" | "habitat-why-evidence" | "greenhouse-chemistry" | "greenhouse-chemistry-model" | "greenhouse-chemistry-files" | "greenhouse-supplies" | "greenhouse-supply-inputs" | "greenhouse-supply-model" | "greenhouse-supply-files" | "greenhouse" | "greenhouse-water" | "greenhouse-daily-water" | "greenhouse-inputs" | "greenhouse-compare" | "greenhouse-model" | "greenhouse-files") => ui.habitat_open = true,
         Some("section" | "section-map") => ui.surface_study_open = true,
+        Some("chronicle") => { ui.left_tab = LeftTab::Chronicle; ui.chronicle_mode = false; },
+        Some("chronicle-legends") => { ui.left_tab = LeftTab::Chronicle; ui.chronicle_mode = true; },
         Some("alerts") => ui.alerts_open = true,
         Some("sound"|"habitat-sound"|"habitat-sound-export") => { ui.alerts_open = true; ui.alerts_tab = 1; }
         Some("routing") => { ui.alerts_open = true; ui.alerts_tab = 2; }
