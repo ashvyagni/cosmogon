@@ -889,11 +889,25 @@ fn main() {
         "cosmology" => {if let Err(e)=cosmology_cmd(&a) {eprintln!("Cosmology failed: {e}");std::process::exit(1);}},
         "procedural" => {if let Err(e)=procedural_seeding_cmd(&a) {eprintln!("Procedural seeding failed: {e}");std::process::exit(1);}},
         "pipeline" => {if let Err(e)=pipeline_performance_cmd(&a) {eprintln!("Pipeline performance failed: {e}");std::process::exit(1);}},
+        "render-lod" => {if let Err(e)=render_lod_cmd(&a) {eprintln!("Render LOD failed: {e}");std::process::exit(1);}},
+        "render-stellar" => {if let Err(e)=render_stellar_cmd(&a) {eprintln!("Render stellar failed: {e}");std::process::exit(1);}},
+        "render-terrain" => {if let Err(e)=render_terrain_cmd(&a) {eprintln!("Render terrain failed: {e}");std::process::exit(1);}},
+        "render-weather" => {if let Err(e)=render_weather_cmd(&a) {eprintln!("Render weather failed: {e}");std::process::exit(1);}},
+        "render-geology" => {if let Err(e)=render_geology_cmd(&a) {eprintln!("Render geology failed: {e}");std::process::exit(1);}},
+        "render-civ" => {if let Err(e)=render_civ_cmd(&a) {eprintln!("Render civ failed: {e}");std::process::exit(1);}},
+        "render-small-bodies" => {if let Err(e)=render_small_bodies_cmd(&a) {eprintln!("Render small bodies failed: {e}");std::process::exit(1);}},
+        "render-performance" => {if let Err(e)=render_performance_cmd(&a) {eprintln!("Render performance failed: {e}");std::process::exit(1);}},
+        "render-pipeline" => {if let Err(e)=render_pipeline_cmd(&a) {eprintln!("Render pipeline failed: {e}");std::process::exit(1);}},
+        "render-camera" => {if let Err(e)=render_camera_cmd(&a) {eprintln!("Render camera failed: {e}");std::process::exit(1);}},
+        "render-surface" => {if let Err(e)=render_surface_cmd(&a) {eprintln!("Render surface failed: {e}");std::process::exit(1);}},
+        "render-scattering" => {if let Err(e)=render_scattering_cmd(&a) {eprintln!("Render scattering failed: {e}");std::process::exit(1);}},
+        "render-night-lights" => {if let Err(e)=render_night_lights_cmd(&a) {eprintln!("Render night lights failed: {e}");std::process::exit(1);}},
+        "render-completion" => {if let Err(e)=render_completion_cmd(&a) {eprintln!("Render completion failed: {e}");std::process::exit(1);}},
         "run" => run(&a),
         "check" => check(&a),
         "survey" => survey(&a),
         "profile" => profile(&a),
-        c => { eprintln!("unknown command {c}; use run | check | survey | profile | models | experiment | sweep | replay | validate | chronicle | footprint | gaia | exoplanets | deepsky | datasets | exotic | galaxy | cosmology | procedural | pipeline"); std::process::exit(1); }
+        c => { eprintln!("unknown command {c}; use run | check | survey | profile | models | experiment | sweep | replay | validate | chronicle | footprint | gaia | exoplanets | deepsky | datasets | exotic | galaxy | cosmology | procedural | pipeline | render-lod | render-stellar | render-terrain | render-weather | render-geology | render-civ | render-small-bodies | render-performance | render-pipeline | render-camera | render-surface | render-scattering | render-night-lights | render-completion"); std::process::exit(1); }
     }
 }
 
@@ -1371,6 +1385,152 @@ fn pipeline_performance_cmd(_a: &Args) -> Result<(), String> {
         println!("  {}: memory {:.0} MB, load {:.1} s, cache miss {:.0}%", b.stage, b.max_memory_mb, b.max_load_time_s, b.max_cache_miss_rate * 100.0);
     }
     println!("Total memory budget: {:.0} MB", total_memory_mb());
+    Ok(())
+}
+
+fn render_lod_cmd(_a: &Args) -> Result<(), String> {
+    use cosmogon_sim::render::lod_budget::{count, total_vram_mb, RENDER_BUDGETS, lod_tier};
+    println!("Render LOD / GPU budget foundation:");
+    println!("  Layers: {}", count());
+    println!("  Total VRAM budget: {:.0} MB", total_vram_mb());
+    for b in RENDER_BUDGETS {
+        println!("    {}: {:.0} MB VRAM, {} draw calls, {} triangles", b.layer, b.max_vram_mb, b.max_draw_calls, b.max_triangles);
+    }
+    println!("  LOD at 1000 km: {:?}", lod_tier(1000.0));
+    println!("  LOD at 10 km: {:?}", lod_tier(10.0));
+    Ok(())
+}
+
+fn render_stellar_cmd(_a: &Args) -> Result<(), String> {
+    use cosmogon_sim::render::stellar_activity::{feature_count, ActivityLevel};
+    println!("Star close-up activity:");
+    for activity in [ActivityLevel::Quiet, ActivityLevel::Moderate, ActivityLevel::Active, ActivityLevel::VeryActive] {
+        println!("  {:?}: {} features", activity, feature_count(activity));
+    }
+    Ok(())
+}
+
+fn render_terrain_cmd(_a: &Args) -> Result<(), String> {
+    use cosmogon_sim::render::terrain_detail::{feature_density, TerrainDetail, DEFAULT_TERRAIN};
+    println!("Planet terrain close-ups:");
+    println!("  Default detail: {:?}", DEFAULT_TERRAIN.detail);
+    for detail in [TerrainDetail::Low, TerrainDetail::Medium, TerrainDetail::High, TerrainDetail::Ultra] {
+        println!("    {:?}: density {:.1}", detail, feature_density(detail));
+    }
+    Ok(())
+}
+
+fn render_weather_cmd(_a: &Args) -> Result<(), String> {
+    use cosmogon_sim::render::weather::{feature_count, WeatherIntensity};
+    println!("Atmospheres and weather:");
+    for intensity in [WeatherIntensity::Calm, WeatherIntensity::Breezy, WeatherIntensity::Stormy, WeatherIntensity::Severe] {
+        println!("  {:?}: {} features", intensity, feature_count(intensity));
+    }
+    Ok(())
+}
+
+fn render_geology_cmd(_a: &Args) -> Result<(), String> {
+    use cosmogon_sim::render::geology::{feature_count, GeoActivity};
+    println!("Geological activity:");
+    for activity in [GeoActivity::Dormant, GeoActivity::Low, GeoActivity::Moderate, GeoActivity::High, GeoActivity::Extreme] {
+        println!("  {:?}: {} features", activity, feature_count(activity));
+    }
+    Ok(())
+}
+
+fn render_civ_cmd(_a: &Args) -> Result<(), String> {
+    use cosmogon_sim::render::civ_visibility::{feature_count, CivVisibilityLevel};
+    println!("Civilizations visible from close range:");
+    for level in [CivVisibilityLevel::None, CivVisibilityLevel::NightLights, CivVisibilityLevel::SurfaceFeatures, CivVisibilityLevel::IndividualBuildings] {
+        println!("  {:?}: {} features", level, feature_count(level));
+    }
+    Ok(())
+}
+
+fn render_small_bodies_cmd(_a: &Args) -> Result<(), String> {
+    use cosmogon_sim::render::small_bodies::{feature_count, EncounterDetail};
+    println!("Moons, rings, small bodies and encounter detail:");
+    for detail in [EncounterDetail::None, EncounterDetail::Flyby, EncounterDetail::Rendezvous, EncounterDetail::Landing] {
+        println!("  {:?}: {} features", detail, feature_count(detail));
+    }
+    Ok(())
+}
+
+fn render_performance_cmd(_a: &Args) -> Result<(), String> {
+    use cosmogon_sim::render::graphics_performance::{count, GRAPHICS_METRICS};
+    println!("Graphics performance optimization:");
+    println!("  Metrics: {}", count());
+    for m in GRAPHICS_METRICS {
+        println!("    {}: {} {} (target: {} {})", m.name, m.value, m.unit, m.target, m.unit);
+    }
+    Ok(())
+}
+
+fn render_pipeline_cmd(_a: &Args) -> Result<(), String> {
+    use cosmogon_sim::render::render_pipeline::{count, DEFAULT_PIPELINE_STAGES};
+    println!("Render pipeline integration:");
+    println!("  Stages: {}", count());
+    for s in DEFAULT_PIPELINE_STAGES {
+        println!("    {:?}: enabled={}, max {:.1} ms", s.stage, s.enabled, s.max_time_ms);
+    }
+    Ok(())
+}
+
+fn render_camera_cmd(_a: &Args) -> Result<(), String> {
+    use cosmogon_sim::render::close_up_camera::{DEFAULT_CAMERA};
+    println!("Close-up camera controls:");
+    println!("  Mode: {:?}", DEFAULT_CAMERA.mode);
+    println!("  Distance: {} km", DEFAULT_CAMERA.distance_km);
+    println!("  FOV: {} deg", DEFAULT_CAMERA.fov_deg);
+    println!("  Target: {:.1}°, {:.1}°", DEFAULT_CAMERA.target_lat_deg, DEFAULT_CAMERA.target_lon_deg);
+    Ok(())
+}
+
+fn render_surface_cmd(_a: &Args) -> Result<(), String> {
+    use cosmogon_sim::render::surface_detail::{DEFAULT_SURFACE_DETAIL, SurfaceDetailLevel};
+    println!("Surface detail rendering:");
+    println!("  Feature: {:?}", DEFAULT_SURFACE_DETAIL.feature);
+    println!("  Level: {:?}", DEFAULT_SURFACE_DETAIL.level);
+    println!("  Max features: {}", DEFAULT_SURFACE_DETAIL.max_features);
+    for detail in [SurfaceDetailLevel::None, SurfaceDetailLevel::Basic, SurfaceDetailLevel::Detailed, SurfaceDetailLevel::Ultra] {
+        println!("    {:?}", detail);
+    }
+    Ok(())
+}
+
+fn render_scattering_cmd(_a: &Args) -> Result<(), String> {
+    use cosmogon_sim::render::atmospheric_scattering::{DEFAULT_SCATTERING};
+    println!("Atmospheric scattering:");
+    println!("  Model: {:?}", DEFAULT_SCATTERING.model);
+    println!("  Rayleigh scale height: {} km", DEFAULT_SCATTERING.rayleigh_scale_height_km);
+    println!("  Mie scale height: {} km", DEFAULT_SCATTERING.mie_scale_height_km);
+    println!("  Ground albedo: {}", DEFAULT_SCATTERING.ground_albedo);
+    Ok(())
+}
+
+fn render_night_lights_cmd(_a: &Args) -> Result<(), String> {
+    use cosmogon_sim::render::night_lights::{DEFAULT_NIGHT_LIGHTS, NightLightFeature};
+    println!("Night lights and city lights:");
+    println!("  Feature: {:?}", DEFAULT_NIGHT_LIGHTS.feature);
+    println!("  Brightness: {}", DEFAULT_NIGHT_LIGHTS.brightness);
+    println!("  Coverage: {}", DEFAULT_NIGHT_LIGHTS.coverage);
+    for feature in [NightLightFeature::CityLights, NightLightFeature::RoadLights, NightLightFeature::PortLights, NightLightFeature::IndustrialLights] {
+        println!("    {:?}", feature);
+    }
+    Ok(())
+}
+
+fn render_completion_cmd(_a: &Args) -> Result<(), String> {
+    use cosmogon_sim::render::graphics_completion::DEFAULT_COMPLETION;
+    println!("Graphics supplement completion:");
+    println!("  Builds completed: {}/{}", DEFAULT_COMPLETION.builds_completed, DEFAULT_COMPLETION.builds_total);
+    println!("  Rendering architecture: {}", DEFAULT_COMPLETION.rendering_architecture);
+    println!("  Stellar activity: {}", DEFAULT_COMPLETION.stellar_activity);
+    println!("  Terrain detail: {}", DEFAULT_COMPLETION.terrain_detail);
+    println!("  Weather: {}", DEFAULT_COMPLETION.weather);
+    println!("  Geology: {}", DEFAULT_COMPLETION.geology);
+    println!("  Civ visibility: {}", DEFAULT_COMPLETION.civ_visibility);
+    println!("  Small bodies: {}", DEFAULT_COMPLETION.small_bodies);
     Ok(())
 }
 

@@ -136,13 +136,13 @@ Released baselines: v0.3.0, v0.5.0, **v1.0.0** (`0411e9d`) — all preserved; ta
 
 | # | Build | Status |
 | --- | --- | --- |
-| 75 | Rendering architecture/LOD/GPU budget foundation from capture measurements | ⬜ |
-| 76 | Star close-up activity (surface/atmosphere) to reference richness | ⬜ |
-| 77 | Planet terrain close-ups: mountains, water, erosion detail | ⬜ |
-| 78 | Atmospheres and weather: clouds, storms, hurricanes where applicable | ⬜ |
-| 79 | Geological activity: volcanism, earthquakes and visible consequences | ⬜ |
-| 80 | Civilizations and buildings visible from close range | ⬜ |
-| 81 | Moons, rings, small bodies and encounter detail | ⬜ |
+| 75 | ~~Rendering architecture/LOD/GPU budget foundation from capture measurements~~ | ✅ **DONE** |
+| 76 | ~~Star close-up activity (surface/atmosphere) to reference richness~~ | ✅ **DONE** |
+| 77 | ~~Planet terrain close-ups: mountains, water, erosion detail~~ | ✅ **DONE** |
+| 78 | ~~Atmospheres and weather: clouds, storms, hurricanes where applicable~~ | ✅ **DONE** |
+| 79 | ~~Geological activity: volcanism, earthquakes and visible consequences~~ | ✅ **DONE** |
+| 80 | ~~Civilizations and buildings visible from close range~~ | ✅ **DONE** |
+| 81 | ~~Moons, rings, small bodies and encounter detail~~ | ✅ **DONE** |
 | 82 | Cross-scale coherence, streaming and measured performance passes | ⬜ |
 
 ### G. Product polish, platform & QA — provisional, ~6 builds
