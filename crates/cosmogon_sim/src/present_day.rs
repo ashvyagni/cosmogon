@@ -17,6 +17,8 @@
 
 use serde::Deserialize;
 
+use cosmogon_core::dmath::DMath;
+
 use crate::civ::settlements::Site;
 use crate::civ::space::{Explored, Mission, MissionKind};
 use crate::civ::species::{Habitat, Species};
@@ -163,20 +165,54 @@ impl Universe {
         // Settlements: real cities with measured shares, then the model's own sites (on
         // Earth's real relief) as the towns and regions in between.
         let urban = POPULATION * URBAN_FRACTION;
+        // Measured cities arrive without the geographic flags the model's own candidate sites
+        // carry. Derive them from the same authoritative geography (deposits and terrain) so a
+        // port city is coastal and a city on an ore field can mine.
+        let earth_body = self.systems[0].bodies[earth].clone();
+        let surface = crate::planet::terrain::SurfaceContext::new(&earth_body, true);
+        let deposits = earth_body.deposits.clone();
+        let city_flags = |lat: f64, lon: f64| {
+            let d = crate::planet::terrain::dir_from_lat_lon(lat, lon);
+            let near_deposit = deposits
+                .iter()
+                .filter(|dep| {
+                    let o = crate::planet::terrain::dir_from_lat_lon(dep.lat, dep.lon);
+                    (d[0] * o[0] + d[1] * o[1] + d[2] * o[2]).clamp(-1.0, 1.0).dacos() < 0.12
+                })
+                .max_by(|a, b| a.richness.total_cmp(&b.richness))
+                .map(|dep| dep.kind);
+            let coastal = {
+                let lat = lat.clamp(-1.5, 1.5);
+                let mut wet = false;
+                for k in 0..8 {
+                    let a = k as f64 * std::f64::consts::TAU / 8.0;
+                    let dd = crate::planet::terrain::dir_from_lat_lon(lat + 0.05 * a.sin(), lon + 0.05 * a.cos());
+                    if !surface.sample(dd).biome.is_land() {
+                        wet = true;
+                        break;
+                    }
+                }
+                wet
+            };
+            (near_deposit, coastal)
+        };
         let mut sites: Vec<Site> = cities()
             .into_iter()
             .enumerate()
-            .map(|(k, c)| Site {
-                name: c.name,
-                lat: c.lat.to_radians(),
-                lon: c.lon.to_radians(),
-                score: 1.0,
-                coastal: false,
-                near_deposit: None,
-                founded: Some(year(1000.0) + k as f64),
-                population: c.pop * 1e6,
-                polity: None,
-                share: Some(c.pop * 1e6 / urban),
+            .map(|(k, c)| {
+                let (near_deposit, coastal) = city_flags(c.lat.to_radians(), c.lon.to_radians());
+                Site {
+                    name: c.name,
+                    lat: c.lat.to_radians(),
+                    lon: c.lon.to_radians(),
+                    score: 1.0,
+                    coastal,
+                    near_deposit,
+                    founded: Some(year(1000.0) + k as f64),
+                    population: c.pop * 1e6,
+                    polity: None,
+                    share: Some(c.pop * 1e6 / urban),
+                }
             })
             .collect();
         let named: Vec<([f64; 3], String)> = sites.iter().map(|s| (s.dir(), s.name.clone())).collect();

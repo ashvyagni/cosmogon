@@ -6,6 +6,7 @@ use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts};
 use cosmogon_sim::astro::LIGHT_YEAR;
 use cosmogon_sim::civ::settlements::{LinkKind, Tier};
+use cosmogon_sim::civ::infrastructure::Role;
 use cosmogon_sim::life::Stage;
 use cosmogon_sim::BodyRef;
 
@@ -27,6 +28,39 @@ struct Hit {
 fn rgb(c: [f32; 3]) -> egui::Color32 {
     let m = c[0].max(c[1]).max(c[2]).max(1e-3);
     egui::Color32::from_rgb((c[0] / m * 255.0) as u8, (c[1] / m * 255.0) as u8, (c[2] / m * 255.0) as u8)
+}
+
+/// A small screen-space badge for a settlement's derived economic role. Farms deliberately have
+/// no badge: almost every settlement has some farmland, so a glyph would carpet the map.
+pub(crate) fn draw_role_glyph(painter: &egui::Painter, at: egui::Pos2, role: Role, alpha: f32) {
+    let a = (235.0 * alpha) as u8;
+    let color = match role {
+        Role::Farm => return,
+        Role::Mine => egui::Color32::from_rgba_unmultiplied(210, 175, 120, a),
+        Role::Port => egui::Color32::from_rgba_unmultiplied(130, 195, 255, a),
+        Role::Industry => egui::Color32::from_rgba_unmultiplied(230, 145, 95, a),
+        Role::Spaceport => egui::Color32::from_rgba_unmultiplied(240, 240, 255, a),
+    };
+    match role {
+        Role::Mine => {
+            let pts = vec![at + egui::vec2(0.0, -4.2), at + egui::vec2(-3.8, 3.0), at + egui::vec2(3.8, 3.0)];
+            painter.add(egui::Shape::convex_polygon(pts, color, egui::Stroke::NONE));
+        }
+        Role::Port => {
+            let stroke = egui::Stroke::new(1.4_f32, color);
+            painter.line_segment([at + egui::vec2(0.0, -3.4), at + egui::vec2(0.0, 3.8)], stroke);
+            painter.line_segment([at + egui::vec2(-3.2, 1.8), at + egui::vec2(3.2, 1.8)], stroke);
+            painter.circle_stroke(at + egui::vec2(0.0, -3.4), 1.4, stroke);
+        }
+        Role::Industry => {
+            painter.rect_filled(egui::Rect::from_center_size(at, egui::vec2(5.6, 5.6)), 0.0, color);
+        }
+        Role::Spaceport => {
+            painter.circle_stroke(at, 3.8, egui::Stroke::new(1.4_f32, color));
+            painter.circle_filled(at, 1.3, color);
+        }
+        Role::Farm => {}
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -248,6 +282,7 @@ pub fn draw_markers(
     }
 
     // Settlements, networks and satellites of civilizations in view.
+    let mut traffic_dots = 0usize;
     for c in u.civs.iter().filter(|c| c.is_alive() && !ui_state.hidden) {
         let r = BodyRef { system: c.system, body: c.body };
         let b = u.body(r);
@@ -263,6 +298,7 @@ pub fn draw_markers(
             (center + n * b.radius * lift, n.dot(to_cam) > 0.05)
         };
         let alpha = ((px - 40.0) / 80.0).clamp(0.0, 1.0);
+        let elapsed = (u.time - u.start_time).max(0.0);
         // Transport links.
         for l in &c.links {
             let (pa, va) = surface(c.sites[l.a as usize].dir(), 1.0);
@@ -277,12 +313,40 @@ pub fn draw_markers(
                     LinkKind::Sea => egui::Color32::from_rgba_unmultiplied(120, 190, 255, (80.0 * alpha) as u8),
                 };
                 painter.line_segment([a, bp], egui::Stroke::new(if l.kind == LinkKind::Rail { 1.4_f32 } else { 1.0 }, col));
+                // Traffic: a few dots moving along the link. Visual only — the phase is the
+                // elapsed simulation time modulo a transport-time constant, offset by a
+                // deterministic hash of the link identity. No state is read or written.
+                if traffic_dots < 600 {
+                    let lap = match l.kind {
+                        LinkKind::Rail => 21_600.0,
+                        LinkKind::Road => 64_800.0,
+                        LinkKind::Sea => 172_800.0,
+                    };
+                    let hash = cosmogon_sim::rng::mix(c.id as u64 * 7919 + 17, ((l.a as u64) << 16) | l.b as u64);
+                    let offset = hash as f64 / u64::MAX as f64;
+                    let dots = 1 + ((c.population / 4.0e9).clamp(0.0, 2.0) as usize);
+                    for k in 0..dots.min(600 - traffic_dots) {
+                        let phase = ((elapsed / lap) + offset + k as f64 * 0.37).fract();
+                        let p3 = pa + (pb - pa) * phase;
+                        if let Some(dp) = project(p3) {
+                            let r = if l.kind == LinkKind::Rail { 2.0 } else { 1.6 };
+                            let dot_col = match l.kind {
+                                LinkKind::Road => egui::Color32::from_rgba_unmultiplied(255, 230, 180, (220.0 * alpha) as u8),
+                                LinkKind::Rail => egui::Color32::from_rgba_unmultiplied(255, 245, 210, (240.0 * alpha) as u8),
+                                LinkKind::Sea => egui::Color32::from_rgba_unmultiplied(170, 220, 255, (200.0 * alpha) as u8),
+                            };
+                            painter.circle_filled(dp, r, dot_col);
+                        }
+                        traffic_dots += 1;
+                    }
+                }
             }
         }
         // Settlements.
-        let mut sites: Vec<_> = c.sites.iter().filter(|s| s.active()).collect();
-        sites.sort_by(|a, b| b.population.total_cmp(&a.population));
-        for (rank, s) in sites.iter().enumerate() {
+        let mut sites: Vec<usize> = (0..c.sites.len()).filter(|&i| c.sites[i].active()).collect();
+        sites.sort_by(|&a, &b| c.sites[b].population.total_cmp(&c.sites[a].population));
+        for (rank, &si) in sites.iter().enumerate() {
+            let s = &c.sites[si];
             let (p, visible) = surface(s.dir(), 1.0);
             if !visible {
                 continue;
@@ -298,14 +362,22 @@ pub fn draw_markers(
                 Tier::Megacity => 5.2,
             };
             // Settlements take their nation's colour; capitals get a ring.
-            let (r, g, b) = match s.polity.and_then(|p| c.polities.get(p as usize)) {
+            let (cr, cg, cb) = match s.polity.and_then(|p| c.polities.get(p as usize)) {
                 Some(p) => (p.color[0], p.color[1], p.color[2]),
                 None => (255, 205, 120),
             };
-            painter.circle_filled(sp, size, egui::Color32::from_rgba_unmultiplied(r, g, b, (230.0 * alpha) as u8));
-            let is_capital = s.polity.and_then(|p| c.polities.get(p as usize)).is_some_and(|p| p.alive() && std::ptr::eq(&c.sites[p.capital as usize], *s));
+            painter.circle_filled(sp, size, egui::Color32::from_rgba_unmultiplied(cr, cg, cb, (230.0 * alpha) as u8));
+            let is_capital = s.polity.and_then(|p| c.polities.get(p as usize)).is_some_and(|p| p.alive() && std::ptr::eq(&c.sites[p.capital as usize], s));
             if is_capital {
                 painter.circle_stroke(sp, size + 3.0, egui::Stroke::new(1.5_f32, egui::Color32::from_rgba_unmultiplied(255, 255, 255, (200.0 * alpha) as u8)));
+            }
+            // Derived infrastructure: a small role glyph beside the largest settlements.
+            if px >= 60.0 && rank < 40 {
+                let w = cosmogon_sim::civ::infrastructure::works(si, c, b);
+                let role = w.dominant();
+                if role != Role::Farm {
+                    draw_role_glyph(&painter, sp + egui::vec2(size + 6.5, 0.0), role, alpha);
+                }
             }
             // More names as the world fills the screen; capitals first among equals.
             let budget = (px / 45.0).clamp(4.0, 40.0) as usize;

@@ -129,6 +129,14 @@ an RFC-4180 `chronicle.csv`. They are never loaded back as a world and existing 
 overwritten. The in-memory minor-event counter used to keep `push` O(1) is `#[serde(skip)]`, so
 save bytes — and the golden fingerprint — are unchanged in both directions.
 
+## Civilization infrastructure (derived, never saved)
+
+Build 63 adds a derived infrastructure view (`civ::infrastructure`): settlement roles
+(farm, mine, port, industry, spaceport) and a per-civilization footprint (areas, link
+lengths, electrification, fossil horizon). Everything is computed from existing saved
+state (settlements, population, energy, endowment, links, technology flags); nothing is
+serialized, no new save field is added, and the golden fingerprint is unchanged.
+
 ## Research bundles
 
 Research recordings use a separate cosmogon-experiment schema 1 manifest and six-file directory;

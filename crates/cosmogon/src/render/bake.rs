@@ -186,7 +186,7 @@ pub fn surface_color(kind: BodyKind, ctx: &SurfaceContext, base: [f32; 3], seed:
 /// Night-side lights from a civilization's settlements and transport links (R8).
 /// Lights of an optional native civilization plus outposts `(lat, lon, population)` such as
 /// colonies of another world's civilization (domes and habitats glow on the night side).
-pub fn bake_lights_with(civ: Option<&Civilization>, outposts: &[(f64, f64, f64)], width: u32) -> Vec<u8> {
+pub fn bake_lights_with(civ: Option<&Civilization>, body: Option<&Body>, outposts: &[(f64, f64, f64)], width: u32) -> Vec<u8> {
     let height = width / 2;
     let mut buf = vec![0f32; (width * height) as usize];
     let electric = civ.is_none_or(|c| c.flags.contains("electric_light"));
@@ -230,7 +230,16 @@ pub fn bake_lights_with(civ: Option<&Civilization>, outposts: &[(f64, f64, f64)]
         // settlements, so lights read as urban fabric rather than single blobs.
         let pop = s.population;
         let lp = pop.log10() as f32;
-        let core = ((lp - 2.0) / 5.0).clamp(0.05, 1.4) * scale;
+        // Industrial belts read brighter and farmland dimmer than the raw population implies;
+        // the bias is derived from the same authoritative state the inspector reports.
+        let bias = match body {
+            Some(bd) => {
+                let w = cosmogon_sim::civ::infrastructure::works(si, civ, bd);
+                (1.0 + 0.25 * w.industry + 0.15 * w.port - 0.2 * w.farm).clamp(0.4, 1.5) as f32
+            }
+            None => 1.0,
+        };
+        let core = ((lp - 2.0) / 5.0).clamp(0.05, 1.4) * scale * bias;
         splat(s.lat, s.lon, (1.0 + 0.9 * (lp - 4.0)).max(0.8), core);
         let count = ((pop / 5_000.0).sqrt() as usize).clamp(3, 160);
         let spread = (lp - 3.0).max(0.4) * 0.007;

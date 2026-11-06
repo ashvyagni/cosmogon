@@ -114,7 +114,7 @@ Released baselines: v0.3.0, v0.5.0, **v1.0.0** (`0411e9d`) — all preserved; ta
 | --- | --- | --- |
 | 61 | ~~Validated climate/consequence propagation between systems~~ | ✅ **DONE** |
 | 62 | ~~Recorded history and Chronicle completeness~~ | ✅ **DONE** |
-| 63 | Visible civilization infrastructure and economic/spatial presence | ⬜ |
+| 63 | ~~Visible civilization infrastructure and economic/spatial presence~~ | ✅ **DONE** |
 | 64 | Intervention consequences end-to-end with evidence | ⬜ |
 | 65 | Interstellar consequence and contact modeling | ⬜ |
 

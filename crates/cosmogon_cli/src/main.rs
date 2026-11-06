@@ -9,6 +9,8 @@
 //! cosmogon-cli chronicle --output NEW_DIR [--initial SAVE | --seed N --scenario S --years Y]
 //!                    [--min-importance 1..5] [--category NAME ...] [--search TEXT]
 //!                    [--system N [--body N]] [--civ N]  # protected JSON+CSV export
+//! cosmogon-cli footprint [--initial SAVE | --seed N --scenario S --years Y] [--civ ID] [--json]
+//!                    # derived infrastructure: roles, areas, links, electrification
 //! ```
 
 use std::time::Instant;
@@ -93,6 +95,7 @@ struct Args {
     system: Option<u32>,
     body: Option<u32>,
     civ: Option<u32>,
+    json: bool,
 }
 
 fn number<T: std::str::FromStr>(text: String, flag: &str) -> Result<T, String> {
@@ -175,6 +178,7 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Args, String> {
         system: None,
         body: None,
         civ: None,
+        json: false,
     };
     let mut it = args;
     let mut explicit_scenario = false;
@@ -250,8 +254,11 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Args, String> {
         if matches!(a.cmd.as_str(),"habitat-definition"|"habitat-crop-definition"|"habitat-setup") && !matches!(flag.as_str(),"--initial"|"--output"|"--target"|"--latitude"|"--longitude"|"--seed"|"--scenario") {return Err(format!("{flag} is not a habitat-definition option"));}
         if a.cmd=="habitat-sweep" && !matches!(flag.as_str(),"--definition"|"--habitat-id"|"--initial"|"--output"|"--samples"|"--interval-days"|"--parameter"|"--from"|"--to"|"--runs"|"--band") {return Err(format!("{flag} is not a habitat sweep option"));}
         if a.cmd=="habitat-compare" && !matches!(flag.as_str(),"--recording"|"--reference"|"--measure"|"--alignment"|"--output") {return Err(format!("{flag} is not a habitat comparison option"));}
-        if matches!(flag.as_str(),"--category"|"--search"|"--system"|"--body"|"--civ") && a.cmd!="chronicle" {return Err(format!("{flag} is a Chronicle option")); }
+        if matches!(flag.as_str(),"--category"|"--search"|"--system"|"--body") && a.cmd!="chronicle" {return Err(format!("{flag} is a Chronicle option")); }
+        if flag=="--civ" && !matches!(a.cmd.as_str(),"chronicle"|"footprint") {return Err("--civ is a Chronicle or footprint option".into()); }
+        if flag=="--json" && a.cmd!="footprint" {return Err("--json requires footprint".into()); }
         if a.cmd=="chronicle" && !matches!(flag.as_str(),"--initial"|"--seed"|"--scenario"|"--years"|"--output"|"--min-importance"|"--category"|"--search"|"--system"|"--body"|"--civ") {return Err(format!("{flag} is not a chronicle option")); }
+        if a.cmd=="footprint" && !matches!(flag.as_str(),"--initial"|"--seed"|"--scenario"|"--years"|"--civ"|"--json") {return Err(format!("{flag} is not a footprint option")); }
         if matches!(flag.as_str(),"--parameter"|"--from"|"--to"|"--runs"|"--samples"|"--interval-days") {explicit_sweep=true;}
         match flag.as_str() {
             "--static-shear" if a.cmd=="contact-hardware" => a.static_shear=true,
@@ -387,6 +394,7 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Args, String> {
             "--system" => a.system = Some(number(val()?, &flag)?),
             "--body" => a.body = Some(number(val()?, &flag)?),
             "--civ" => a.civ = Some(number(val()?, &flag)?),
+            "--json" => a.json = true,
             "--scenario" => {
                 explicit_scenario = true;
                 a.scenario = match val()?.as_str() {
@@ -514,10 +522,12 @@ if a.geographic_start.as_deref().is_some_and(|p|p.trim().is_empty()) {return Err
         if !(1..=5).contains(&a.min_importance) {return Err("--min-importance must be between 1 and 5".into());}
         if !explicit_min_importance {a.min_importance=1;}
     }
+    if a.cmd=="footprint" && a.initial.is_some() && (explicit_seed || explicit_scenario || explicit_years) {return Err("Choose a saved --initial world or new --seed/--scenario/--years, not both".into());}
     Ok(a)
 }
 fn help() {
     eprintln!("cosmogon-cli chronicle --output NEW_DIR [--initial SAVE | --seed N --scenario S --years Y] [--min-importance 1..5] [--category NAME ...] [--search TEXT] [--system N [--body N]] [--civ N]\nProtected chronicle export: manifest.json + chronicle.json + RFC-4180 chronicle.csv of the recorded history; existing folders are refused; an unfiltered default keeps every importance level");
+    eprintln!("cosmogon-cli footprint [--initial SAVE | --seed N --scenario S --years Y] [--civ ID] [--json]\nDerived infrastructure of every living civilization: farms/mines/ports/industry/spaceports, built-up and farmland area, road/rail/sea length, electrification and fossil horizon; read-only, nothing saved");
     eprintln!("cosmogon-cli contact-start [--output NEW_FILE]\ncosmogon-cli contact-hardware [--static-shear --operation-window SECONDS --initial WORLD --target Mars --geographic-start FILE --output NEW_FILE]\nflight-definition --contact-hardware FILE explicitly enables versioned terrain/rigid-body motion; --operation-window adds the modeled solver-integrated surface-operation ledger; no safe landing or delivery");
     eprintln!("cosmogon-cli support-definition [--output NEW_FILE]\ncosmogon-cli flight-support --recording COMPLETE_FLIGHT_DIR [--definition LIMITS_FILE --output NEW_DIR]\ncosmogon-cli support-inspect --recording COMPLETE_SUPPORT_DIR\nConditional actual footprint/force evidence; no attachment or cargo permission");
     eprintln!("cosmogon-cli arrival-start [--output NEW_FILE]\ncosmogon-cli flight-approach --recording COMPLETE_FLIGHT_DIR [--target BODY --output NEW_DIR]\ncosmogon-cli approach-inspect --recording COMPLETE_APPROACH_DIR\nGeographic flight-definition starts: --geographic-start FILE (explicit spherical altitude and east/north/up velocities)");
@@ -868,11 +878,12 @@ fn main() {
             if !report.passes_regression {std::process::exit(1);}
         }
         "chronicle" => {if let Err(e)=chronicle_export(&a) {eprintln!("Chronicle export failed: {e}");std::process::exit(1);}},
+        "footprint" => {if let Err(e)=footprint_report(&a) {eprintln!("Footprint report failed: {e}");std::process::exit(1);}},
         "run" => run(&a),
         "check" => check(&a),
         "survey" => survey(&a),
         "profile" => profile(&a),
-        c => { eprintln!("unknown command {c}; use run | check | survey | profile | models | experiment | sweep | replay | validate | chronicle"); std::process::exit(1); }
+        c => { eprintln!("unknown command {c}; use run | check | survey | profile | models | experiment | sweep | replay | validate | chronicle | footprint"); std::process::exit(1); }
     }
 }
 
@@ -1116,6 +1127,131 @@ fn chronicle_export(a: &Args) -> Result<(), String> {
     );
     Ok(())
 }
+
+/// Report the derived physical footprint of the civilization(s) in a world: what each
+/// settlement *is* (farm, mine, port, industry or spaceport) and the aggregate areas, link
+/// lengths, mining workforce, electrification and fossil horizon implied by authoritative state.
+/// Nothing here is saved or simulated separately — the numbers are a pure function of the world.
+fn footprint_report(a: &Args) -> Result<(), String> {
+    use cosmogon_sim::civ::infrastructure;
+    use cosmogon_sim::BodyRef;
+
+    let mut u = initial_universe(a)?;
+    if a.initial.is_none() {
+        u.advance_by(a.years * SECONDS_PER_YEAR);
+    }
+    let selected: Vec<usize> = match a.civ {
+        Some(id) => {
+            let i = u
+                .civs
+                .iter()
+                .position(|c| c.id == id)
+                .ok_or_else(|| format!("Unknown civilization id {id}"))?;
+            vec![i]
+        }
+        None => (0..u.civs.len()).filter(|&i| u.civs[i].is_alive()).collect(),
+    };
+
+    let mut rows = Vec::new();
+    for i in selected {
+        let c = &u.civs[i];
+        let body = u.body(BodyRef { system: c.system, body: c.body });
+        let fp = infrastructure::footprint(c, body);
+        let roles: Vec<&str> = fp
+            .roles()
+            .iter()
+            .zip(infrastructure::Role::ALL)
+            .filter(|(n, _)| **n > 0)
+            .map(|(_, r)| r.label())
+            .collect();
+        let top: Vec<(String, &'static str, f64)> = infrastructure::site_roles(c, body, 0.0)
+            .into_iter()
+            .take(5)
+            .map(|r| (c.sites[r.site].name.clone(), r.role.label(), c.sites[r.site].population))
+            .collect();
+        rows.push(serde_json::json!({
+            "id": c.id,
+            "name": c.name,
+            "system": c.system,
+            "body": c.body,
+            "system_name": u.systems[c.system as usize].name,
+            "body_name": body.name,
+            "settlements": fp.settlements,
+            "roles": {
+                "farm": fp.farms,
+                "mine": fp.mines,
+                "port": fp.ports,
+                "industry": fp.industries,
+                "spaceport": fp.spaceports,
+            },
+            "present_roles": roles,
+            "urban_km2": fp.urban_km2,
+            "farmland_km2": fp.farmland_km2,
+            "road_km": fp.road_km,
+            "rail_km": fp.rail_km,
+            "sea_km": fp.sea_km,
+            "mining_population": fp.mining_population,
+            "electrified": fp.electrified,
+            "energy_w_per_person": fp.energy_w_per_person,
+            "fossil_years_left": fp.fossil_years_left,
+            "endowment": infrastructure::endowment(body).into_iter()
+                .map(|(k, v)| serde_json::json!({"resource": k.label(), "units": v}))
+                .collect::<Vec<_>>(),
+            "largest_settlements": top.into_iter()
+                .map(|(name, role, population)| serde_json::json!({"name": name, "role": role, "population": population}))
+                .collect::<Vec<_>>(),
+        }));
+    }
+
+    if a.json {
+        let report = serde_json::json!({
+            "format": "cosmogon-footprint",
+            "schema_version": 1,
+            "world": {
+                "time_s": u.time,
+                "start_time_s": u.start_time,
+                "advance_years": if a.initial.is_some() { 0.0 } else { a.years },
+                "seed": a.seed,
+                "civilizations_alive": u.civs.iter().filter(|c| c.is_alive()).count(),
+            },
+            "civilizations": rows,
+            "limitations": [
+                "Derived from settlement positions and populations, links, energy use, technology flags and the body's modelled endowment; it is not a second simulation and adds no saved state.",
+                "Built-up area uses representative densities per settlement tier and farmland uses 0.15 ha per person; both are stated modelling assumptions, not measured footprints.",
+                "Resource endowment is in the simulation's relative units (Earth = 1.0); only fossil fuels have a documented energy conversion and therefore a depletion horizon."
+            ],
+        });
+        println!("{}", serde_json::to_string_pretty(&report).expect("finite footprint report"));
+        return Ok(());
+    }
+
+    if rows.is_empty() {
+        println!("No living civilizations to report.");
+        return Ok(());
+    }
+    for row in &rows {
+        let get = |k: &str| row.get(k).cloned().unwrap_or(serde_json::Value::Null);
+        let f = |k: &str| get(k).as_f64().unwrap_or(0.0);
+        let s = |k: &str| get(k).as_str().unwrap_or("?").to_string();
+        let roles = row["roles"].clone();
+        let n = |k: &str| roles.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+        let fossil = match f("fossil_years_left") {
+            y if y.is_finite() && y > 0.0 => format!("{:.0} yr", y),
+            _ => "none".into(),
+        };
+        println!(
+            "{} · {} · {}: {} settlements (farms {} mines {} ports {} industry {} spaceports {}) · built {:.0} km² · farmland {:.0} km² · road {:.0} km / rail {:.0} km / sea {:.0} km · electrified {:.0}% · mining workforce {:.0} · fossil horizon {}",
+            s("name"), s("system_name"), s("body_name"),
+            f("settlements") as u64, n("farm"), n("mine"), n("port"), n("industry"), n("spaceport"),
+            f("urban_km2"), f("farmland_km2"),
+            f("road_km"), f("rail_km"), f("sea_km"),
+            f("electrified") * 100.0, f("mining_population"),
+            fossil,
+        );
+    }
+    Ok(())
+}
+
 fn batch(a: &Args) -> Result<(), String> {
     use cosmogon_sim::research::{ExperimentDefinition, ParameterSweep, PARAMETERS};
     let output = a
@@ -1894,6 +2030,28 @@ mod argument_tests {
         assert!(args(&["habitat-sweep","--initial","s","--output","o","--from","0","--to","4000","--samples","1"]).is_ok());
         assert!(args(&["habitat-sweep","--initial","s","--output","o","--definition","p","--habitat-id","0"]).is_ok());
         assert!(args(&["habitat-compare","--recording","a","--reference","b","--measure","methane","--alignment","world"]).is_ok());
+    }
+
+    #[test]
+    fn footprint_arguments_refuse_unknown_ids_and_ignored_flags() {
+        for v in [
+            vec!["footprint", "--output", "o"],
+            vec!["footprint", "--min-importance", "4"],
+            vec!["footprint", "--category", "war"],
+            vec!["footprint", "--search", "war"],
+            vec!["footprint", "--system", "0"],
+            vec!["footprint", "--save", "x"],
+            vec!["footprint", "--initial", "s", "--seed", "2"],
+            vec!["footprint", "--initial", "s", "--years", "10"],
+            vec!["chronicle", "--output", "o", "--json"],
+            vec!["run", "--json"],
+        ] {
+            assert!(args(&v).is_err(), "{v:?}");
+        }
+        let a = args(&["footprint", "--initial", "saved.cosmo", "--civ", "3", "--json"]).unwrap();
+        assert_eq!(a.civ, Some(3));
+        assert!(a.json);
+        assert_eq!(a.cmd, "footprint");
     }
 
     #[test]

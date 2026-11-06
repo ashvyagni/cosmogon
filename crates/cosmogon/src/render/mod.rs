@@ -898,7 +898,7 @@ fn update_lights(
         }
         b.lights_baked_at = now;
         let w = 2048;
-        let data = bake::bake_lights_with(civ, &outposts, w);
+        let data = bake::bake_lights_with(civ, Some(u.body(b.r)), &outposts, w);
         if let Some(m) = planet_mats.get_mut(&mat.0) {
             m.lights = images.add(image_from(data, w, w / 2, TextureFormat::R8Unorm));
         }

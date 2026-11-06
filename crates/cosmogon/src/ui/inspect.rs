@@ -4,6 +4,7 @@ use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts};
 use cosmogon_sim::astro::{BodyKind, ResourceKind, AU, LIGHT_YEAR};
 use cosmogon_sim::civ::knowledge::Domain;
+use cosmogon_sim::civ::infrastructure;
 use cosmogon_sim::civ::tech::{Status, TechGraph};
 use cosmogon_sim::civ::{environment_for, CivStatus, Civilization};
 use cosmogon_sim::history::{Category, ChronicleFilter, Event};
@@ -1125,6 +1126,50 @@ fn civilization(ui: &mut egui::Ui, u: &Universe, c: &Civilization, ui_state: &mu
     ui.add_space(4.0);
     glance(ui, u, c);
     ui.add_space(6.0);
+
+    // Derived infrastructure: what the settlements physically are. Read-only, never saved.
+    let body = u.body(BodyRef { system: c.system, body: c.body });
+    let fp = infrastructure::footprint(c, body);
+    heading(ui, "Infrastructure");
+    let roles: Vec<String> = fp
+        .roles()
+        .iter()
+        .zip(infrastructure::Role::ALL)
+        .filter(|(n, _)| **n > 0)
+        .map(|(n, r)| r.count(*n))
+        .collect();
+    egui::Grid::new("civ-infrastructure").num_columns(2).striped(true).show(ui, |ui| {
+        kv(ui, "Settlements", format!("{} · {}", fp.settlements, if roles.is_empty() { "no classified role".into() } else { roles.join(" · ") }));
+        kv(ui, "Built-up area", format!("{:.0} km²", fp.urban_km2));
+        kv(ui, "Farmland", format!("{:.0} km²", fp.farmland_km2));
+        kv(ui, "Transport", format!("{:.0} km road · {:.0} km rail · {:.0} km sea", fp.road_km, fp.rail_km, fp.sea_km));
+        kv(ui, "Electrified", format!("{:.0}%", fp.electrified * 100.0));
+        if fp.mining_population > 0.0 {
+            kv(ui, "Mining workforce", format!("{} people", group_digits(fp.mining_population)));
+        }
+        kv(ui, "Fossil horizon", match fp.fossil_years_left {
+            Some(y) if y.is_finite() => format!("{:.0} years", y),
+            _ => "no fossil burn".into(),
+        });
+    });
+    let top = infrastructure::site_roles(c, body, 0.0);
+    if !top.is_empty() {
+        let line: Vec<String> = top.iter().take(4).map(|r| {
+            let s = &c.sites[r.site];
+            format!("{} ({} · {})", s.name, r.role.label(), compact(s.population))
+        }).collect();
+        ui.label(egui::RichText::new(format!("Largest: {}", line.join(", "))).size(11.0).color(MUTED));
+    }
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new("Map:").size(10.5).color(MUTED));
+        for role in [infrastructure::Role::Mine, infrastructure::Role::Port, infrastructure::Role::Industry, infrastructure::Role::Spaceport] {
+            let (rect, _) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
+            super::markers::draw_role_glyph(ui.painter(), rect.center(), role, 1.0);
+            ui.label(egui::RichText::new(role.label()).size(10.5).color(MUTED));
+        }
+    });
+    ui.label(egui::RichText::new("Derived from settlement, population, energy and endowment state — not a second simulation. Areas use representative densities.").size(10.5).color(MUTED));
+
     let ci = u.civs.iter().position(|x| std::ptr::eq(x, c)).unwrap_or(0) as u32;
     egui::Grid::new("civ").num_columns(2).striped(true).show(ui, |ui| {
         kv(ui, "Population", format!("{} (capacity {})", compact(c.population), compact(c.capacity)));
