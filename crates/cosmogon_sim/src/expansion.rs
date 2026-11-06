@@ -297,7 +297,7 @@ mod tests {
         other.nebulae.clear();
         let target_sys = other.id;
         u.systems.push(other);
-        u.probes.push(crate::universe::Probe { civ: ci as u32, from: 0, to: target_sys, launched: u.time - 100.0 * SECONDS_PER_YEAR, speed: 0.05 * crate::astro::SPEED_OF_LIGHT, arrived: true });
+        u.probes.push(crate::universe::Probe { civ: ci as u32, from: 0, to: target_sys, launched: u.time - 100.0 * SECONDS_PER_YEAR, speed: 0.05 * crate::astro::SPEED_OF_LIGHT, arrived: true, launch_event: None });
         u.civs[ci].flags.insert("starships".into());
         u.civs[ci].starship_timer = u.time - 1000.0 * SECONDS_PER_YEAR;
         let n0 = u.civs.len();

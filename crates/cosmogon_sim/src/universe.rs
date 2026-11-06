@@ -130,6 +130,9 @@ pub struct Probe {
     /// m/s
     pub speed: f64,
     pub arrived: bool,
+    /// Index of the "Probe launched towards X" Chronicle event, for the cause graph.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub launch_event: Option<usize>,
 }
 
 impl Probe {
@@ -770,7 +773,8 @@ impl Universe {
                     self.civs[b].detected.push(a as u32);
                     self.civs[b].pressures.contact = 1.0;
                     let (name_a, name_b) = (self.civs[a].name.clone(), self.civs[b].name.clone());
-                    self.history.push(Event {
+                    let detect_idx = self.history.events.len();
+                    self.history.push_caused(Event {
                         time: t,
                         category: Category::Contact,
                         importance: 5,
@@ -780,7 +784,10 @@ impl Universe {
                         body: Some(self.civs[b].body),
                         civ: Some(b as u32),
                         cause: None,
-                    });
+                    }, None);
+                    // Contact consequences: technology awareness and cultural pressure.
+                    self.history.push_caused(Event { time: t, category: Category::Technology, importance: 4, title: format!("{name_b} deciphers {name_a} signals"), detail: "Radio astronomy decodes the first interstellar message.".to_string(), system: Some(self.civs[b].system), body: Some(self.civs[b].body), civ: Some(b as u32), cause: Some(detect_idx) }, None);
+                    self.history.push_caused(Event { time: t, category: Category::Civilization, importance: 3, title: format!("Contact pressure on {name_b}"), detail: "Knowledge of another civilization reshapes society's priorities.".to_string(), system: Some(self.civs[b].system), body: Some(self.civs[b].body), civ: Some(b as u32), cause: Some(detect_idx) }, None);
                 }
             }
         }
@@ -804,17 +811,37 @@ impl Universe {
             if let Some(target) = target {
                 let speed = self.params.civilization.probe_speed_c * SPEED_OF_LIGHT;
                 let (to, to_name) = (target.id, target.name.clone());
-                self.probes.push(Probe { civ: ci as u32, from: c.system, to, launched: t, speed, arrived: false });
+                let launch_event_idx = self.history.events.len();
+                let civ_name = self.civs[ci].name.clone();
+                let civ_system = self.civs[ci].system;
+                let civ_body = self.civs[ci].body;
+                let from_site = c.system;
                 self.civs[ci].probes_launched += 1;
-                let name = self.civs[ci].name.clone();
-                self.history.push(Event { time: t, category: Category::Space, importance: 5, title: format!("Probe launched towards {to_name}"), detail: format!("{name} send a robotic emissary at {:.0}% of light speed.", self.params.civilization.probe_speed_c * 100.0), system: Some(self.civs[ci].system), body: Some(self.civs[ci].body), civ: Some(ci as u32), cause: None });
+                self.history.push_caused(Event { time: t, category: Category::Space, importance: 5, title: format!("Probe launched towards {to_name}"), detail: format!("{civ_name} send a robotic emissary at {:.0}% of light speed.", self.params.civilization.probe_speed_c * 100.0), system: Some(civ_system), body: Some(civ_body), civ: Some(ci as u32), cause: None }, None);
+                self.probes.push(Probe { civ: ci as u32, from: from_site, to, launched: t, speed, arrived: false, launch_event: Some(launch_event_idx) });
             }
         }
         for p in self.probes.iter_mut().filter(|p| !p.arrived) {
             let dist = (self.systems[p.to as usize].position - self.systems[p.from as usize].position).length();
             if (t - p.launched) * p.speed >= dist {
                 p.arrived = true;
-                self.history.push(Event { time: t, category: Category::Space, importance: 5, title: format!("Probe arrives at {}", self.systems[p.to as usize].name), detail: format!("After {:.0} years in flight.", (t - p.launched) / SECONDS_PER_YEAR), system: Some(p.to), body: None, civ: Some(p.civ), cause: None });
+                let arrival_idx = self.history.events.len();
+                let cause = p.launch_event;
+                self.history.push_caused(Event { time: t, category: Category::Space, importance: 5, title: format!("Probe arrives at {}", self.systems[p.to as usize].name), detail: format!("After {:.0} years in flight.", (t - p.launched) / SECONDS_PER_YEAR), system: Some(p.to), body: None, civ: Some(p.civ), cause }, None);
+                // Consequences: check the target system for life or civilization.
+                for (bi, body) in self.systems[p.to as usize].bodies.iter().enumerate() {
+                    if !body.exists() { continue; }
+                    let _r = crate::BodyRef { system: p.to, body: bi as u32 };
+                    if let Some(ci) = self.civs.iter().position(|c| c.is_alive() && c.system == p.to && c.body == bi as u32) {
+                        let civ_name = self.civs[ci].name.clone();
+                        self.history.push_caused(Event { time: t, category: Category::Contact, importance: 5, title: format!("First contact: probe reaches {civ_name}"), detail: format!("A probe from {} arrives at {}.", self.civs[p.civ as usize].name, civ_name), system: Some(p.to), body: Some(bi as u32), civ: Some(ci as u32), cause: Some(arrival_idx) }, None);
+                    } else if self.biospheres.iter().any(|b| b.system == p.to && b.body == bi as u32 && b.stage > crate::life::Stage::Sterile) {
+                        let bio = self.biospheres.iter().find(|b| b.system == p.to && b.body == bi as u32).unwrap();
+                        self.history.push_caused(Event { time: t, category: Category::Life, importance: 4, title: format!("Probe discovers life on {}", body.name), detail: format!("Biosphere at {:?} stage detected.", bio.stage), system: Some(p.to), body: Some(bi as u32), civ: None, cause: Some(arrival_idx) }, None);
+                    } else {
+                        self.history.push_caused(Event { time: t, category: Category::Astronomy, importance: 3, title: format!("Probe surveys {}", body.name), detail: "Barren world, no biosphere detected.".into(), system: Some(p.to), body: Some(bi as u32), civ: None, cause: Some(arrival_idx) }, None);
+                    }
+                }
             }
         }
     }
