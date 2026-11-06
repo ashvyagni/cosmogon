@@ -124,7 +124,7 @@ Released baselines: v0.3.0, v0.5.0, **v1.0.0** (`0411e9d`) — all preserved; ta
 | --- | --- | --- |
 | 66 | Real catalogue streaming (Gaia nearby stars) with provenance | ⬜ |
 | 67 | ~~Known exoplanet systems~~ | ✅ **DONE** |
-| 68 | Real nebulae/galaxy/deep-sky datasets | ⬜ |
+| 68 | ~~Real nebulae/galaxy/deep-sky datasets~~ | ✅ **DONE** |
 | 69 | Dataset registry, licensing and citation audit | ⬜ |
 | 70 | Per-model exotic validation (black holes, compact objects) | ⬜ |
 | 71 | Galaxy-scale dynamics and collisions | ⬜ |

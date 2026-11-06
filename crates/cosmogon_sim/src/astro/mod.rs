@@ -11,6 +11,7 @@ pub mod star;
 pub mod system;
 pub mod gaia;
 pub mod exoplanets;
+pub mod deepsky;
 
 pub use body::*;
 pub use object::{ObjectClass, Provenance, Quality};

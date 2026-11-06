@@ -881,11 +881,12 @@ fn main() {
         "footprint" => {if let Err(e)=footprint_report(&a) {eprintln!("Footprint report failed: {e}");std::process::exit(1);}},
         "gaia" => {if let Err(e)=gaia_catalogue(&a) {eprintln!("Gaia catalogue failed: {e}");std::process::exit(1);}},
         "exoplanets" => {if let Err(e)=exoplanets_catalogue(&a) {eprintln!("Exoplanets failed: {e}");std::process::exit(1);}},
+        "deepsky" => {if let Err(e)=deepsky_catalogue(&a) {eprintln!("Deep-sky failed: {e}");std::process::exit(1);}},
         "run" => run(&a),
         "check" => check(&a),
         "survey" => survey(&a),
         "profile" => profile(&a),
-        c => { eprintln!("unknown command {c}; use run | check | survey | profile | models | experiment | sweep | replay | validate | chronicle | footprint | gaia | exoplanets"); std::process::exit(1); }
+        c => { eprintln!("unknown command {c}; use run | check | survey | profile | models | experiment | sweep | replay | validate | chronicle | footprint | gaia | exoplanets | deepsky"); std::process::exit(1); }
     }
 }
 
@@ -1275,6 +1276,26 @@ fn exoplanets_catalogue(_a: &Args) -> Result<(), String> {
     for sys in EXOPLANET_SYSTEMS {
         println!("{:>24} {:>16.2} {:>12.3} {:>10}", sys.name, sys.distance_pc, sys.star_mass_solar, sys.bodies.len());
     }
+    Ok(())
+}
+
+fn deepsky_catalogue(_a: &Args) -> Result<(), String> {
+    use cosmogon_sim::astro::deepsky::DEEP_SKY_OBJECTS;
+    println!("Deep-sky objects:");
+    println!("{:>28} {:>16} {:>12} {:>10} {:>10}", "Object", "Type", "Distance (pc)", "Mag V", "Size (arcmin)");
+    for obj in DEEP_SKY_OBJECTS {
+        let kind = match obj.kind {
+            cosmogon_sim::astro::deepsky::DeepSkyType::Nebula => "Nebula",
+            cosmogon_sim::astro::deepsky::DeepSkyType::Galaxy => "Galaxy",
+            cosmogon_sim::astro::deepsky::DeepSkyType::StarCluster => "Star Cluster",
+            cosmogon_sim::astro::deepsky::DeepSkyType::GlobularCluster => "Globular Cluster",
+            cosmogon_sim::astro::deepsky::DeepSkyType::SupernovaRemnant => "Supernova Remnant",
+            cosmogon_sim::astro::deepsky::DeepSkyType::DarkNebula => "Dark Nebula",
+        };
+        println!("{:>28} {:>16} {:>12.0} {:>10.1} {:>10.1}", obj.name, kind, obj.distance_pc, obj.mag_v, obj.size_arcmin);
+    }
+    println!();
+    println!("Total objects: {}", DEEP_SKY_OBJECTS.len());
     Ok(())
 }
 
