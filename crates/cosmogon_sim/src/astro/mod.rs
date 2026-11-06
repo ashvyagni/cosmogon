@@ -12,6 +12,12 @@ pub mod system;
 pub mod gaia;
 pub mod exoplanets;
 pub mod deepsky;
+pub mod dataset_registry;
+pub mod exotic_validation;
+pub mod galaxy_dynamics;
+pub mod cosmology;
+pub mod procedural_seeding;
+pub mod pipeline_performance;
 
 pub use body::*;
 pub use object::{ObjectClass, Provenance, Quality};

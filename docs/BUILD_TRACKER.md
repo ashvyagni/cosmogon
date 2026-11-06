@@ -125,12 +125,12 @@ Released baselines: v0.3.0, v0.5.0, **v1.0.0** (`0411e9d`) — all preserved; ta
 | 66 | Real catalogue streaming (Gaia nearby stars) with provenance | ⬜ |
 | 67 | ~~Known exoplanet systems~~ | ✅ **DONE** |
 | 68 | ~~Real nebulae/galaxy/deep-sky datasets~~ | ✅ **DONE** |
-| 69 | Dataset registry, licensing and citation audit | ⬜ |
-| 70 | Per-model exotic validation (black holes, compact objects) | ⬜ |
-| 71 | Galaxy-scale dynamics and collisions | ⬜ |
-| 72 | Cosmology/large-scale structure presentation | ⬜ |
-| 73 | Procedural-body seeding with honest provenance labels | ⬜ |
-| 74 | Data pipeline performance and memory budgets | ⬜ |
+| 69 | ~~Dataset registry, licensing and citation audit~~ | ✅ **DONE** |
+| 70 | ~~Per-model exotic validation (black holes, compact objects)~~ | ✅ **DONE** |
+| 71 | ~~Galaxy-scale dynamics and collisions~~ | ✅ **DONE** |
+| 72 | ~~Cosmology/large-scale structure presentation~~ | ✅ **DONE** |
+| 73 | ~~Procedural-body seeding with honest provenance labels~~ | ✅ **DONE** |
+| 74 | ~~Data pipeline performance and memory budgets~~ | ✅ **DONE** |
 
 ### F. Owner graphics goal supplement (queued by owner; ~8–12 builds) — see [GRAPHICS_GOAL_SUPPLEMENT](GRAPHICS_GOAL_SUPPLEMENT.md)
 

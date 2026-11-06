@@ -677,6 +677,7 @@ fn main() {
             std::process::exit(1);
         }
     };
+    #[allow(unreachable_patterns)]
     match a.cmd.as_str() {
         "help" => help(),
         "crop-chemistry"|"crop-chemistry-inspect" => {if let Err(e)=crop_chemistry(&a) {eprintln!("Crop chemistry failed: {e}");std::process::exit(1);}},
@@ -882,11 +883,17 @@ fn main() {
         "gaia" => {if let Err(e)=gaia_catalogue(&a) {eprintln!("Gaia catalogue failed: {e}");std::process::exit(1);}},
         "exoplanets" => {if let Err(e)=exoplanets_catalogue(&a) {eprintln!("Exoplanets failed: {e}");std::process::exit(1);}},
         "deepsky" => {if let Err(e)=deepsky_catalogue(&a) {eprintln!("Deep-sky failed: {e}");std::process::exit(1);}},
+        "datasets" => {if let Err(e)=datasets_registry(&a) {eprintln!("Datasets failed: {e}");std::process::exit(1);}},
+        "exotic" => {if let Err(e)=exotic_validation_cmd(&a) {eprintln!("Exotic validation failed: {e}");std::process::exit(1);}},
+        "galaxy" => {if let Err(e)=galaxy_dynamics_cmd(&a) {eprintln!("Galaxy dynamics failed: {e}");std::process::exit(1);}},
+        "cosmology" => {if let Err(e)=cosmology_cmd(&a) {eprintln!("Cosmology failed: {e}");std::process::exit(1);}},
+        "procedural" => {if let Err(e)=procedural_seeding_cmd(&a) {eprintln!("Procedural seeding failed: {e}");std::process::exit(1);}},
+        "pipeline" => {if let Err(e)=pipeline_performance_cmd(&a) {eprintln!("Pipeline performance failed: {e}");std::process::exit(1);}},
         "run" => run(&a),
         "check" => check(&a),
         "survey" => survey(&a),
         "profile" => profile(&a),
-        c => { eprintln!("unknown command {c}; use run | check | survey | profile | models | experiment | sweep | replay | validate | chronicle | footprint | gaia | exoplanets | deepsky"); std::process::exit(1); }
+        c => { eprintln!("unknown command {c}; use run | check | survey | profile | models | experiment | sweep | replay | validate | chronicle | footprint | gaia | exoplanets | deepsky | datasets | exotic | galaxy | cosmology | procedural | pipeline"); std::process::exit(1); }
     }
 }
 
@@ -1296,6 +1303,74 @@ fn deepsky_catalogue(_a: &Args) -> Result<(), String> {
     }
     println!();
     println!("Total objects: {}", DEEP_SKY_OBJECTS.len());
+    Ok(())
+}
+
+fn datasets_registry(_a: &Args) -> Result<(), String> {
+    use cosmogon_sim::astro::dataset_registry::{count, DATASET_REGISTRY, licence_summary};
+    println!("Registered datasets ({}):", count());
+    println!("{:>20} {:>24} {:>12} {:>12}", "ID", "Licence", "Embedded", "Source");
+    for ds in DATASET_REGISTRY {
+        let embedded = if ds.embedded { "yes" } else { "no" };
+        println!("{:>20} {:>24} {:>12} {:>12}", ds.id, format!("{:?}", ds.licence), embedded, ds.url);
+    }
+    println!();
+    println!("Licence summary:");
+    println!("{}", licence_summary());
+    Ok(())
+}
+
+fn exotic_validation_cmd(_a: &Args) -> Result<(), String> {
+    use cosmogon_sim::astro::exotic_validation::{count, all_pass, EXOTIC_VALIDATION_CASES};
+    println!("Exotic validation cases ({}):", count());
+    for c in EXOTIC_VALIDATION_CASES {
+        println!("  {}: {} ({})", c.model_id, c.name, if c.passes_regression { "PASS" } else { "FAIL" });
+    }
+    println!("All pass: {}", all_pass());
+    Ok(())
+}
+
+fn galaxy_dynamics_cmd(_a: &Args) -> Result<(), String> {
+    use cosmogon_sim::astro::galaxy_dynamics::{count, all_pass, GALAXY_DYNAMICS_CASES};
+    println!("Galaxy dynamics cases ({}):", count());
+    for c in GALAXY_DYNAMICS_CASES {
+        println!("  {}: {} ({})", c.model_id, c.name, if c.passes_regression { "PASS" } else { "FAIL" });
+    }
+    println!("All pass: {}", all_pass());
+    Ok(())
+}
+
+fn cosmology_cmd(_a: &Args) -> Result<(), String> {
+    use cosmogon_sim::astro::cosmology::{PLANCK_2018, LARGE_SCALE_STRUCTURE_CASES, count};
+    println!("Cosmological parameters (Planck 2018):");
+    println!("  H0 = {} km/s/Mpc", PLANCK_2018.hubble_constant);
+    println!("  Omega_m = {}", PLANCK_2018.matter_density);
+    println!("  Omega_Lambda = {}", PLANCK_2018.dark_energy_density);
+    println!("Large-scale structure cases ({}):", count());
+    for c in LARGE_SCALE_STRUCTURE_CASES {
+        println!("  {}: {} ({})", c.model_id, c.name, if c.passes_regression { "PASS" } else { "FAIL" });
+    }
+    Ok(())
+}
+
+fn procedural_seeding_cmd(_a: &Args) -> Result<(), String> {
+    use cosmogon_sim::astro::procedural_seeding::{count, DEFAULT_PROCEDURAL_PARAMS, ProvenanceLabel};
+    println!("Procedural body seeding:");
+    println!("  Seed: {:x}", DEFAULT_PROCEDURAL_PARAMS.seed);
+    println!("  Mass range: {:.1e} - {:.1e} kg", DEFAULT_PROCEDURAL_PARAMS.mass_range.0, DEFAULT_PROCEDURAL_PARAMS.mass_range.1);
+    println!("  Radius range: {:.1e} - {:.1e} m", DEFAULT_PROCEDURAL_PARAMS.radius_range.0, DEFAULT_PROCEDURAL_PARAMS.radius_range.1);
+    println!("  Body count: {}", count());
+    println!("  Default provenance label: {:?}", ProvenanceLabel::Procedural);
+    Ok(())
+}
+
+fn pipeline_performance_cmd(_a: &Args) -> Result<(), String> {
+    use cosmogon_sim::astro::pipeline_performance::{count, total_memory_mb, PIPELINE_BUDGETS};
+    println!("Pipeline performance budgets ({} stages):", count());
+    for b in PIPELINE_BUDGETS {
+        println!("  {}: memory {:.0} MB, load {:.1} s, cache miss {:.0}%", b.stage, b.max_memory_mb, b.max_load_time_s, b.max_cache_miss_rate * 100.0);
+    }
+    println!("Total memory budget: {:.0} MB", total_memory_mb());
     Ok(())
 }
 
