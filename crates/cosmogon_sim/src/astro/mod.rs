@@ -9,6 +9,7 @@ pub mod orbit;
 pub mod sol;
 pub mod star;
 pub mod system;
+pub mod gaia;
 
 pub use body::*;
 pub use object::{ObjectClass, Provenance, Quality};

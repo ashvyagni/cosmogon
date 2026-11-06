@@ -879,11 +879,12 @@ fn main() {
         }
         "chronicle" => {if let Err(e)=chronicle_export(&a) {eprintln!("Chronicle export failed: {e}");std::process::exit(1);}},
         "footprint" => {if let Err(e)=footprint_report(&a) {eprintln!("Footprint report failed: {e}");std::process::exit(1);}},
+        "gaia" => {if let Err(e)=gaia_catalogue(&a) {eprintln!("Gaia catalogue failed: {e}");std::process::exit(1);}},
         "run" => run(&a),
         "check" => check(&a),
         "survey" => survey(&a),
         "profile" => profile(&a),
-        c => { eprintln!("unknown command {c}; use run | check | survey | profile | models | experiment | sweep | replay | validate | chronicle | footprint"); std::process::exit(1); }
+        c => { eprintln!("unknown command {c}; use run | check | survey | profile | models | experiment | sweep | replay | validate | chronicle | footprint | gaia"); std::process::exit(1); }
     }
 }
 
@@ -1249,6 +1250,20 @@ fn footprint_report(a: &Args) -> Result<(), String> {
             fossil,
         );
     }
+    Ok(())
+}
+
+fn gaia_catalogue(a: &Args) -> Result<(), String> {
+    use cosmogon_sim::astro::gaia::NEARBY_STARS;
+    let limit = a.samples.min(NEARBY_STARS.len());
+    println!("Gaia DR3 nearby stars (within 10 pc):");
+    println!("{:>20} {:>12} {:>10} {:>12} {:>10}", "Name", "Distance (pc)", "Parallax (mas)", "Mag G", "Source ID");
+    for star in NEARBY_STARS.iter().take(limit) {
+        println!("{:>20} {:>12.2} {:>10.1} {:>12.2} {:>10}", star.name, star.distance_pc, star.parallax_mas, star.mag_g, star.source_id);
+    }
+    println!();
+    println!("Total entries: {}", NEARBY_STARS.len());
+    println!("Shown: {}", limit);
     Ok(())
 }
 
