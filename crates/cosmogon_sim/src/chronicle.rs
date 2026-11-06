@@ -170,6 +170,7 @@ mod tests {
             system: Some(0),
             body: Some(1),
             civ: Some(3),
+            cause: None,
         }
     }
 
@@ -304,6 +305,7 @@ mod tests {
             system: Some(0),
             body: None,
             civ: None,
+            cause: None,
         };
         let plain = Event {
             time: 7.0,
@@ -314,6 +316,7 @@ mod tests {
             system: None,
             body: None,
             civ: None,
+            cause: None,
         };
         let u = world(&[tricky.clone(), plain.clone()]);
         let text = csv(&rows(&u, &ChronicleFilter::default()));

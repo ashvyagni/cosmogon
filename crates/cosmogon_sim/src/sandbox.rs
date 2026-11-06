@@ -719,7 +719,7 @@ impl Universe {
             };
             self.ensure_vehicle_task();
             self.edits.push(EditRecord {time:t,summary:summary.clone(),edit});
-            self.history.push(Event {time:t,category:Category::Space,importance:3,title:summary.clone(),detail:"Authored finite test-particle spacecraft initial conditions. No settlement loading, safe landing or cargo delivery is implied.".into(),system:Some(parent.system),body:Some(parent.body),civ:None});
+            self.history.push(Event {time:t,category:Category::Space,importance:3,title:summary.clone(),detail:"Authored finite test-particle spacecraft initial conditions. No settlement loading, safe landing or cargo delivery is implied.".into(),system:Some(parent.system),body:Some(parent.body),civ:None, cause: None});
             return Ok(EditOutcome {created:None,summary});
         }
         if matches!(edit,Edit::CreateHabitat {..} | Edit::ConfigureHabitat {..} | Edit::HarvestHabitatCrop {..} | Edit::InstallHabitatCrop {..} | Edit::StoreHabitatCropFood {..} | Edit::SupplyHabitatConstructionMaterial {..} | Edit::TransferHabitatStock {..} | Edit::RemoveHabitat {..}) {
@@ -791,7 +791,7 @@ impl Universe {
             };
             self.ensure_habitat_task();
             self.edits.push(EditRecord {time:t,summary:summary.clone(),edit});
-            self.history.push(Event {time:t,category:Category::Space,importance:3,title:summary.clone(),detail:"User-created habitat experiment; finite stores and explicit engineering assumptions. No measured settlement or safety certification.".into(),system:Some(body.system),body:Some(body.body),civ:None});
+            self.history.push(Event {time:t,category:Category::Space,importance:3,title:summary.clone(),detail:"User-created habitat experiment; finite stores and explicit engineering assumptions. No measured settlement or safety certification.".into(),system:Some(body.system),body:Some(body.body),civ:None, cause: None});
             return Ok(EditOutcome {created:None,summary});
         }
         // Height-source edits preserve the existing gravity model and phase. Refresh the
@@ -805,7 +805,7 @@ impl Universe {
             b.sea_level=terrain::Terrain::of(b).sea_level_for(b.hydro.ocean_fraction);
             self.refresh_body_environment(s,j,t);
             self.edits.push(EditRecord {time:t,summary:summary.clone(),edit:edit.clone()});
-            self.history.push(Event {time:t,category:Category::Astronomy,importance:4,title:summary.clone(),detail:"Observed terrain source changed explicitly. Camera anchors and studies pin their previous dataset.".into(),system:Some(body.system),body:Some(body.body),civ:None});
+            self.history.push(Event {time:t,category:Category::Astronomy,importance:4,title:summary.clone(),detail:"Observed terrain source changed explicitly. Camera anchors and studies pin their previous dataset.".into(),system:Some(body.system),body:Some(body.body),civ:None, cause: None});
             return Ok(EditOutcome {created:None,summary});
         }
         let s = edit.system() as usize;
@@ -1002,7 +1002,7 @@ impl Universe {
             self.refresh_body_environment(s, j, t);
         }
         self.edits.push(EditRecord { time: t, summary: summary.clone(), edit });
-        self.history.push(Event { time: t, category: Category::Astronomy, importance: 4, title: summary, detail: "Sandbox edit.".into(), system: Some(s as u32), body: outcome.created.map(|c| c.body), civ: None });
+        self.history.push(Event { time: t, category: Category::Astronomy, importance: 4, title: summary, detail: "Sandbox edit.".into(), system: Some(s as u32), body: outcome.created.map(|c| c.body), civ: None, cause: None });
         Ok(outcome)
     }
 
@@ -1053,7 +1053,7 @@ impl Universe {
             // The star itself was swallowed by something heavier (see Dynamics::apply_merges).
             if let Slot::Body(i) = ev.survivor {
                 let who = self.systems[s].bodies[i as usize].name.clone();
-                self.history.push(Event { time: t, category: Category::Astronomy, importance: 5, title: format!("{who} swallows the star"), detail: format!("Now {:.2} M☉, it becomes the centre of the system; the planets orbit it instead.", self.systems[s].star.mass), system: Some(s as u32), body: None, civ: None });
+                self.history.push(Event { time: t, category: Category::Astronomy, importance: 5, title: format!("{who} swallows the star"), detail: format!("Now {:.2} M☉, it becomes the centre of the system; the planets orbit it instead.", self.systems[s].star.mass), system: Some(s as u32), body: None, civ: None, cause: None });
                 self.refresh_system_climates(s, t);
             }
             return;
@@ -1072,7 +1072,7 @@ impl Universe {
                     detail: format!("It strikes the star at {:.0} km/s and is vaporised.", c.rel_vel.length() / 1000.0),
                     system: Some(s as u32),
                     body: Some(j as u32),
-                    civ: None,
+                    civ: None, cause: None,
                 });
                 self.on_body_destroyed(s, j, t, &format!("fell into {star}"));
             }
@@ -1085,7 +1085,7 @@ impl Universe {
                     BodyKind::Star => "It plunges into the star and is vaporised.",
                     _ => "Tidal forces shred it; the debris falls onto the dense remnant.",
                 };
-                self.history.push(Event { time: t, category: Category::Astronomy, importance: 5, title: format!("{imp_name} torn apart by {who}"), detail: detail.into(), system: Some(s as u32), body: Some(j as u32), civ: None });
+                self.history.push(Event { time: t, category: Category::Astronomy, importance: 5, title: format!("{imp_name} torn apart by {who}"), detail: detail.into(), system: Some(s as u32), body: Some(j as u32), civ: None, cause: None });
                 self.on_body_destroyed(s, j, t, &format!("was torn apart by {who}"));
             }
             Slot::Body(i) => {
@@ -1234,10 +1234,10 @@ impl Universe {
             detail,
             system: Some(s as u32),
             body: Some(i as u32),
-            civ: None,
+            civ: None, cause: None,
         });
         if let Some(sev) = extinction_event {
-            self.history.push(Event { time: t, category: Category::Life, importance: 5, title: format!("Mass extinction on {target}"), detail: format!("The impact winter wipes out {:.0}% of species.", sev * 100.0), system: Some(s as u32), body: Some(i as u32), civ: None });
+            self.history.push(Event { time: t, category: Category::Life, importance: 5, title: format!("Mass extinction on {target}"), detail: format!("The impact winter wipes out {:.0}% of species.", sev * 100.0), system: Some(s as u32), body: Some(i as u32), civ: None, cause: None });
         }
         self.systems[s].bodies[i].impacts.push(rec);
         let _ = r;
@@ -1254,7 +1254,7 @@ impl Universe {
                 bio.biodiversity = 0.0;
                 bio.photosynthesis_since = None;
                 bio.civilization_present = false;
-                self.history.push(Event { time: t, category: Category::Disaster, importance: 5, title: format!("{name} sterilised"), detail: format!("All life is lost: {why}."), system: Some(s as u32), body: Some(i as u32), civ: None });
+                self.history.push(Event { time: t, category: Category::Disaster, importance: 5, title: format!("{name} sterilised"), detail: format!("All life is lost: {why}."), system: Some(s as u32), body: Some(i as u32), civ: None, cause: None });
             }
         }
         self.end_civilizations(s, i, t, why);
@@ -1267,7 +1267,7 @@ impl Universe {
                 c.status = CivStatus::Extinct { at: t };
                 c.population = 0.0;
                 let name = c.name.clone();
-                self.history.push(Event { time: t, category: Category::Disaster, importance: 5, title: format!("The end of {name}"), detail: format!("Their world is gone: {why}."), system: Some(s as u32), body: Some(i as u32), civ: Some(ci as u32) });
+                self.history.push(Event { time: t, category: Category::Disaster, importance: 5, title: format!("The end of {name}"), detail: format!("Their world is gone: {why}."), system: Some(s as u32), body: Some(i as u32), civ: Some(ci as u32), cause: None });
             }
         }
     }
@@ -1384,7 +1384,7 @@ impl Universe {
                         detail,
                         system: Some(s as u32),
                         body: Some(j as u32),
-                        civ: None,
+                        civ: None, cause: None,
                     });
                 }
             }

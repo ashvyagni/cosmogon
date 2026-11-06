@@ -83,7 +83,7 @@ impl Universe {
             ] {
                 if before <= mark && cov > mark {
                     let name = civ.name.clone();
-                    self.history.push(Event { time: t, category: Category::Technology, importance: 5, title, detail: format!("{detail} ({name})"), system: Some(s as u32), body: Some(home), civ: Some(ci as u32) });
+                    self.history.push(Event { time: t, category: Category::Technology, importance: 5, title, detail: format!("{detail} ({name})"), system: Some(s as u32), body: Some(home), civ: Some(ci as u32), cause: None });
                 }
             }
         }
@@ -116,11 +116,11 @@ impl Universe {
                 let now = assess(&self.systems[s], bi, t).score;
                 let (name, civ) = (self.systems[s].bodies[bi].name.clone(), self.civs[ci].name.clone());
                 if first {
-                    self.history.push(Event { time: t, category: Category::Technology, importance: 5, title: format!("Terraforming of {name} begins"), detail: format!("{civ} start thickening its air and importing water from icy bodies."), system: Some(s as u32), body: Some(b), civ: Some(ci as u32) });
+                    self.history.push(Event { time: t, category: Category::Technology, importance: 5, title: format!("Terraforming of {name} begins"), detail: format!("{civ} start thickening its air and importing water from icy bodies."), system: Some(s as u32), body: Some(b), civ: Some(ci as u32), cause: None });
                 }
                 if was < 0.5 && now >= 0.5 && !self.civs[ci].colonies[col].terraformed {
                     self.civs[ci].colonies[col].terraformed = true;
-                    self.history.push(Event { time: t, category: Category::Life, importance: 5, title: format!("{name} is habitable"), detail: format!("After centuries of work by {civ}, people walk {name} without pressure suits."), system: Some(s as u32), body: Some(b), civ: Some(ci as u32) });
+                    self.history.push(Event { time: t, category: Category::Life, importance: 5, title: format!("{name} is habitable"), detail: format!("After centuries of work by {civ}, people walk {name} without pressure suits."), system: Some(s as u32), body: Some(b), civ: Some(ci as u32), cause: None });
                 }
             }
         }
@@ -168,6 +168,7 @@ impl Universe {
                 system: Some(self.civs[ci].system),
                 body: Some(self.civs[ci].body),
                 civ: Some(ci as u32),
+                cause: None,
             });
         }
         // Arrivals.
@@ -231,6 +232,7 @@ impl Universe {
             system: Some(to.system),
             body: Some(to.body),
             civ: Some(id),
+            cause: None,
         });
     }
 }

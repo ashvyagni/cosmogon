@@ -74,6 +74,11 @@ pub struct Event {
     pub system: Option<u32>,
     pub body: Option<u32>,
     pub civ: Option<u32>,
+    /// Index into `History.events` of the event that caused this one; `None` = root cause
+    /// (a user edit/intervention, or a natural event with no traced cause). Omitted from
+    /// serialization when `None`, so old saves and golden-neutral runs are byte-identical.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cause: Option<usize>,
 }
 
 /// A Chronicle query: importance/category/text matching plus optional exact scope.
@@ -159,7 +164,10 @@ impl History {
     /// Minor events beyond this count are pruned oldest-first; milestones are kept forever.
     pub const MINOR_CAP: usize = 4000;
 
-    pub fn push(&mut self, e: Event) {
+    /// Push an event with an optional cause link. `push(e)` is `push_caused(e, None)`.
+    pub fn push_caused(&mut self, e: Event, cause: Option<usize>) {
+        let mut e = e;
+        e.cause = cause;
         let minor = e.importance < 3;
         if self.minor.is_none() {
             self.recount();
@@ -176,6 +184,48 @@ impl History {
         if self.minor.unwrap_or(0) > Self::MINOR_CAP {
             self.prune_one();
         }
+    }
+
+    /// Push an event with no cause (root / user-initiated). Backward-compatible wrapper
+    /// around [`push_caused`].
+    pub fn push(&mut self, e: Event) {
+        self.push_caused(e, None);
+    }
+
+    /// Walk the `cause` chain from `start` back to its root, returning indices in
+    /// chronological order (root first, `start` last). Stops at a `None` cause or an
+    /// out-of-range index (e.g. after pruning removed the target). Cycles are impossible
+    /// by construction (a cause always precedes its effect) but are defended against.
+    pub fn why_trace(&self, start: usize) -> Vec<usize> {
+        let mut chain = Vec::new();
+        let mut idx = start;
+        let mut seen = 0usize;
+        while idx < self.events.len() {
+            chain.push(idx);
+            match self.events[idx].cause {
+                Some(c) if c < self.events.len() => {
+                    idx = c;
+                    seen += 1;
+                    if seen > self.events.len() {
+                        // Defensive: should never happen; break rather than loop forever.
+                        break;
+                    }
+                }
+                _ => break,
+            }
+        }
+        chain.reverse();
+        chain
+    }
+
+    /// Forward links: indices of events whose `cause` points to `index`, in push order.
+    pub fn cause_children(&self, index: usize) -> Vec<usize> {
+        self.events
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| e.cause == Some(index))
+            .map(|(i, _)| i)
+            .collect()
     }
 
     /// Rebuild both cache fields from the events vector (first push after `Default` or
@@ -266,6 +316,7 @@ mod tests {
         title: &str,
         detail: &str,
         ids: (Option<u32>, Option<u32>, Option<u32>),
+        cause: Option<usize>,
     ) -> Event {
         Event {
             time,
@@ -276,15 +327,16 @@ mod tests {
             system: ids.0,
             body: ids.1,
             civ: ids.2,
+            cause,
         }
     }
 
     fn sample() -> History {
         let mut h = History::default();
-        h.push(event(300.0, Category::War, 4, "The Great War", "Nations clash across the world.", (Some(0), Some(1), Some(7))));
-        h.push(event(100.0, Category::Astronomy, 5, "Comet passes", "A bright comet crosses the sky.", (Some(0), Some(1), None)));
-        h.push(event(200.0, Category::Technology, 2, "Radio invented", "Wireless communication begins.", (Some(0), Some(2), Some(7))));
-        h.push(event(400.0, Category::Disaster, 3, "Pandemic", "Millions die of a new disease.", (Some(1), Some(0), None)));
+        h.push_caused(event(300.0, Category::War, 4, "The Great War", "Nations clash across the world.", (Some(0), Some(1), Some(7)), None), None);
+        h.push_caused(event(100.0, Category::Astronomy, 5, "Comet passes", "A bright comet crosses the sky.", (Some(0), Some(1), None), None), None);
+        h.push_caused(event(200.0, Category::Technology, 2, "Radio invented", "Wireless communication begins.", (Some(0), Some(2), Some(7)), None), None);
+        h.push_caused(event(400.0, Category::Disaster, 3, "Pandemic", "Millions die of a new disease.", (Some(1), Some(0), None), None), None);
         h
     }
 
@@ -355,11 +407,11 @@ mod tests {
     #[test]
     fn chronicle_is_deterministically_ordered_on_time_ties() {
         let mut h = History::default();
-        h.push(event(20.0, Category::Life, 3, "b", "", (None, None, None)));
-        h.push(event(10.0, Category::War, 3, "x", "", (None, None, None)));
-        h.push(event(10.0, Category::War, 3, "y", "", (None, None, None)));
-        h.push(event(10.0, Category::War, 3, "z", "", (None, None, None)));
-        h.push(event(5.0, Category::Astronomy, 3, "a", "", (None, None, None)));
+        h.push(event(20.0, Category::Life, 3, "b", "", (None, None, None), None));
+        h.push(event(10.0, Category::War, 3, "x", "", (None, None, None), None));
+        h.push(event(10.0, Category::War, 3, "y", "", (None, None, None), None));
+        h.push(event(10.0, Category::War, 3, "z", "", (None, None, None), None));
+        h.push(event(5.0, Category::Astronomy, 3, "a", "", (None, None, None), None));
         let expected = ["a", "x", "y", "z", "b"];
         let first = titles(&h, &ChronicleFilter::default());
         assert_eq!(first, expected, "ties keep push (vector) order");
@@ -407,7 +459,7 @@ mod tests {
                 mix(&mut seed),
                 &format!("event {i}"),
                 "detail",
-                (Some(0), Some(1), None),
+                (Some(0), Some(1), None), None,
             );
             let reference = e.clone();
             fast.push(e);
@@ -423,7 +475,7 @@ mod tests {
     fn history_serialisation_is_byte_identical_with_the_counter_cached() {
         let mut warm = History::default();
         for i in 0..60 {
-            warm.push(event(i as f64, Category::Life, (i % 5 + 1) as u8, "e", "d", (Some(0), Some(1), None)));
+            warm.push(event(i as f64, Category::Life, (i % 5 + 1) as u8, "e", "d", (Some(0), Some(1), None), None));
         }
         let s1 = serde_json::to_string(&warm).unwrap();
         // The cache is not part of the save format in either direction.
@@ -433,7 +485,7 @@ mod tests {
         // Cold (deserialised) and warm caches continue identically.
         let mut cold: History = serde_json::from_str(&s1).unwrap();
         assert_eq!(serde_json::to_string(&cold).unwrap(), s1, "deserialise → serialise is byte-identical");
-        let extra = event(99.0, Category::War, 2, "late", "minor event", (Some(0), Some(1), None));
+        let extra = event(99.0, Category::War, 2, "late", "minor event", (Some(0), Some(1), None), None);
         warm.push(extra.clone());
         cold.push(extra);
         let s2 = serde_json::to_string(&warm).unwrap();
@@ -441,5 +493,62 @@ mod tests {
         assert_eq!(warm, cold, "manual PartialEq compares events only, so live == loaded stays true");
         // A default-constructed history still serialises to the bare save-format object.
         assert_eq!(serde_json::to_string(&History::default()).unwrap(), "{\"events\":[]}");
+    }
+
+    #[test]
+    fn cause_links_form_a_chain_back_to_root() {
+        let mut h = History::default();
+        let root = h.events.len();
+        h.push_caused(event(100.0, Category::Astronomy, 5, "Comet", "A bright comet crosses.", (Some(0), Some(1), None), None), None);
+        h.push_caused(event(150.0, Category::Life, 4, "Life appears", "Biosphere emerges.", (Some(0), Some(1), None), None), Some(root));
+        h.push_caused(event(200.0, Category::Civilization, 4, "Civ rises", "Settlements form.", (Some(0), Some(1), None), None), Some(root + 1));
+        let trace = h.why_trace(root + 2);
+        assert_eq!(trace, [root, root + 1, root + 2], "why_trace returns root→leaf");
+    }
+
+    #[test]
+    fn why_trace_stops_at_root_or_pruned() {
+        let mut h = History::default();
+        h.push_caused(event(100.0, Category::War, 4, "Root", "First event.", (None, None, None), None), None);
+        let leaf = h.events.len();
+        h.push_caused(event(200.0, Category::War, 4, "Leaf", "Second event.", (None, None, None), None), Some(0));
+        assert_eq!(h.why_trace(leaf), [0, leaf], "why_trace walks back through cause to root");
+        assert_eq!(h.why_trace(0), [0]);
+    }
+
+    #[test]
+    fn cause_children_returns_forward_links() {
+        let mut h = History::default();
+        h.push_caused(event(100.0, Category::Astronomy, 5, "Root", "First.", (None, None, None), None), None);
+        h.push_caused(event(150.0, Category::Life, 4, "Child 1", "Second.", (None, None, None), None), Some(0));
+        h.push_caused(event(200.0, Category::Civilization, 4, "Child 2", "Third.", (None, None, None), None), Some(0));
+        h.push_caused(event(250.0, Category::Technology, 3, "Grandchild", "Fourth.", (None, None, None), None), Some(1));
+        let children = h.cause_children(0);
+        assert_eq!(children, [1, 2], "root's children are the two direct consequences");
+        let child1 = h.cause_children(1);
+        assert_eq!(child1, [3], "child 1 has one child");
+        let child2 = h.cause_children(2);
+        assert!(child2.is_empty(), "child 2 has no children");
+    }
+
+    #[test]
+    fn cause_is_omitted_from_serialization_when_none() {
+        let mut h = History::default();
+        h.push_caused(event(100.0, Category::War, 4, "Root", "First.", (None, None, None), None), None);
+        let s = serde_json::to_string(&h).unwrap();
+        assert!(!s.contains("\"cause\""), "cause=None is omitted from JSON: {s}");
+    }
+
+    #[test]
+    fn cause_is_preserved_in_serialization_when_some() {
+        let mut h = History::default();
+        h.push_caused(event(100.0, Category::Astronomy, 5, "Root", "First.", (None, None, None), None), None);
+        let root_idx = h.events.len() - 1;
+        h.push_caused(event(200.0, Category::Life, 4, "Child", "Second.", (None, None, None), None), Some(root_idx));
+        let s = serde_json::to_string(&h).unwrap();
+        assert!(s.contains("\"cause\""), "cause=Some is serialized: {s}");
+        let h2: History = serde_json::from_str(&s).unwrap();
+        assert_eq!(h2.events[1].cause, Some(root_idx), "cause survives round-trip");
+        assert_eq!(h2.events[0].cause, None, "root cause is None after round-trip");
     }
 }

@@ -154,11 +154,11 @@ impl Universe {
                     detail: format!("A {mass:.2} M☉ {spectral} star begins fusing hydrogen{}. {:.0}% of the cloud's gas remains.", if self.systems[id as usize].bodies.is_empty() { "" } else { ", with planets forming around it" }, left * 100.0),
                     system: Some(id),
                     body: None,
-                    civ: None,
+                    civ: None, cause: None,
                 });
                 if !self.nurseries[ni].active() {
                     let nursery = self.nurseries[ni].name.clone();
-                    self.history.push(Event { time: born, category: Category::Astronomy, importance: 5, title: format!("Star formation ends in the {nursery}"), detail: "Its gas is used up or blown away by the young stars' light and winds; a young open cluster remains.".into(), system: Some(id), body: None, civ: None });
+                    self.history.push(Event { time: born, category: Category::Astronomy, importance: 5, title: format!("Star formation ends in the {nursery}"), detail: "Its gas is used up or blown away by the young stars' light and winds; a young open cluster remains.".into(), system: Some(id), body: None, civ: None, cause: None });
                 }
             }
         }

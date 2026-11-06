@@ -143,7 +143,7 @@ fn begin(mut n: ResMut<Notifications>, mut sim: ResMut<Sim>, settings: Res<crate
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn event(time: f64, category: Category, importance: u8) -> Event { Event { time, category, importance, title: format!("Event {time}"), detail: "Test event".into(), system: Some(0), body: None, civ: None } }
+    fn event(time: f64, category: Category, importance: u8) -> Event { Event { time, category, importance, title: format!("Event {time}"), detail: "Test event".into(), system: Some(0), body: None, civ: None, cause: None } }
     fn sim() -> Sim { Sim::new(cosmogon_sim::Universe::new(cosmogon_sim::UniverseSettings { scenario: cosmogon_sim::Scenario::EmptySystem, ..Default::default() }), crate::sim::Session::Reference { dataset: "test".into(), title: "Test".into() }) }
     #[test]
     fn quiet_routes_retain_information_and_never_interrupt() {

@@ -193,7 +193,7 @@ impl Universe {
         for j in victims {
             let name = self.systems[s].bodies[j].name.clone();
             self.remove_with_moons(s, j, t, RemovalCause::MergedInto(None), &format!("was engulfed by the red giant {star_name}"));
-            self.history.push(Event { time: t, category: Category::Astronomy, importance: 5, title: format!("{name} engulfed by {star_name}"), detail: format!("The swelling red giant, now {:.2} AU across in radius, swallows the planet.", r_star / crate::astro::AU), system: Some(s as u32), body: Some(j as u32), civ: None });
+            self.history.push(Event { time: t, category: Category::Astronomy, importance: 5, title: format!("{name} engulfed by {star_name}"), detail: format!("The swelling red giant, now {:.2} AU across in radius, swallows the planet.", r_star / crate::astro::AU), system: Some(s as u32), body: Some(j as u32), civ: None, cause: None });
         }
     }
 
@@ -253,7 +253,7 @@ impl Universe {
                 detail: format!("It sheds {:.2} M☉ as a glowing planetary nebula; a {:.2} M☉ white dwarf the size of Earth remains. Surviving orbits widen {k:.2}×.", m0 - m1, m1),
                 system: Some(s as u32),
                 body: None,
-                civ: None,
+                civ: None, cause: None,
             });
             self.refresh_system(s, t);
             return;
@@ -269,7 +269,7 @@ impl Universe {
             detail: format!("The core of the {m0:.1} M☉ star collapses into a {m1:.1} M☉ {remnant}; ~10⁴⁴ J of debris races out at 10 000 km/s."),
             system: Some(s as u32),
             body: None,
-            civ: None,
+            civ: None, cause: None,
         });
         let sys = &mut self.systems[s];
         sys.nebulae.push(Nebula { kind: NebulaKind::SupernovaRemnant, born: t, speed: 1.0e7, mass: m0 - m1, seed });
@@ -293,7 +293,7 @@ impl Universe {
         for j in vaporised {
             let n = self.systems[s].bodies[j].name.clone();
             self.remove_with_moons(s, j, t, RemovalCause::Vaporised, "was vaporised by a supernova");
-            self.history.push(Event { time: t, category: Category::Disaster, importance: 5, title: format!("{n} vaporised"), detail: "The supernova blast delivers more energy than holds the world together.".into(), system: Some(s as u32), body: Some(j as u32), civ: None });
+            self.history.push(Event { time: t, category: Category::Disaster, importance: 5, title: format!("{n} vaporised"), detail: "The supernova blast delivers more energy than holds the world together.".into(), system: Some(s as u32), body: Some(j as u32), civ: None, cause: None });
         }
         for (j, frac) in scorched {
             if !self.systems[s].bodies[j].exists() {
@@ -325,7 +325,7 @@ impl Universe {
         for j in escaped {
             let n = self.systems[s].bodies[j].name.clone();
             self.remove_with_moons(s, j, t, RemovalCause::Ejected, "was flung out of the system");
-            self.history.push(Event { time: t, category: Category::Astronomy, importance: 4, title: format!("{n} escapes"), detail: "With most of the star's mass gone, its orbit is no longer bound: it drifts into interstellar space.".into(), system: Some(s as u32), body: Some(j as u32), civ: None });
+            self.history.push(Event { time: t, category: Category::Astronomy, importance: 4, title: format!("{n} escapes"), detail: "With most of the star's mass gone, its orbit is no longer bound: it drifts into interstellar space.".into(), system: Some(s as u32), body: Some(j as u32), civ: None, cause: None });
         }
         self.blasts.push(Blast { system: s as u32, time: t, energy: SUPERNOVA_ENERGY, reached: vec![s as u32] });
         self.refresh_system(s, t);
@@ -372,7 +372,7 @@ impl Universe {
             }
         }
         if lost {
-            self.history.push(Event { time: t, category: Category::Disaster, importance: 5, title: format!("{name} sterilised"), detail: format!("All life is lost: {why}."), system: Some(s as u32), body: Some(j as u32), civ: None });
+            self.history.push(Event { time: t, category: Category::Disaster, importance: 5, title: format!("{name} sterilised"), detail: format!("All life is lost: {why}."), system: Some(s as u32), body: Some(j as u32), civ: None, cause: None });
         }
         self.on_body_destroyed(s, j, t, &format!("was sterilised by {why}"));
     }
@@ -479,7 +479,7 @@ impl Universe {
                         detail,
                         system: Some(s as u32),
                         body: Some(j as u32),
-                        civ: None,
+                        civ: None, cause: None,
                     });
                 }
             }

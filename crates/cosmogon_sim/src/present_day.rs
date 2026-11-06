@@ -309,7 +309,7 @@ impl Universe {
             detail: format!("{:.2} billion people, {} active satellites, robotic explorers on or around every planet; crewed spaceflight since 1961.", POPULATION / 1e9, SATELLITES),
             system: Some(0),
             body: Some(earth as u32),
-            civ: Some(id),
+            civ: Some(id), cause: None,
         });
         self.civs.push(civ);
     }

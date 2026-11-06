@@ -159,7 +159,7 @@ impl Universe {
         // A changed society deserves a prompt look rather than a long stride.
         c.stride_years = 1;
         let (system, body) = (c.system, c.body);
-        self.history.push(Event { time: t, category: Category::Civilization, importance: 4, title: title.clone(), detail, system: Some(system), body: Some(body), civ: Some(civ) });
+        self.history.push(Event { time: t, category: Category::Civilization, importance: 4, title: title.clone(), detail, system: Some(system), body: Some(body), civ: Some(civ), cause: None });
         title
     }
 }

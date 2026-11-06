@@ -194,7 +194,7 @@ impl Universe {
             ),
             system: Some(s as u32),
             body: Some(i as u32),
-            civ: None,
+            civ: None, cause: None,
         });
     }
 
@@ -243,7 +243,7 @@ impl Universe {
                 detail: format!("Inside the Roche limit ({:.0} km) tides beat its own gravity; its pieces spread into a ring.", roche / 1000.0),
                 system: Some(s as u32),
                 body: Some(p as u32),
-                civ: None,
+                civ: None, cause: None,
             });
         }
     }

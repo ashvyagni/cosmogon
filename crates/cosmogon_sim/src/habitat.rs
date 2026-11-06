@@ -1749,7 +1749,7 @@ impl Universe {
                 } else {
                     format!("Experimental design alert. O₂ {:.1} kPa; CO₂ {:.1} Pa; {:.2} K; unserved {:.1} W. Not medical or safety certification.",h.state.oxygen_pa(&h.config)/1000.0,h.state.co2_pa(&h.config),h.state.temperature_k,h.budget.unserved_w)
                 };
-                self.history.push(Event {time,category:if active {Category::Disaster} else {Category::Space},importance:3,title:format!("{}: {}{message}",h.definition.name,if active {""} else {"recovered from "}),detail,system:Some(h.definition.body.system),body:Some(h.definition.body.body),civ:None});
+                self.history.push(Event {time,category:if active {Category::Disaster} else {Category::Space},importance:3,title:format!("{}: {}{message}",h.definition.name,if active {""} else {"recovered from "}),detail,system:Some(h.definition.body.system),body:Some(h.definition.body.body),civ: None, cause: None });
             }
         }
         h.alert_bits = now;

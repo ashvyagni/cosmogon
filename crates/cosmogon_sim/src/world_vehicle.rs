@@ -1294,7 +1294,7 @@ impl Universe {
                         Phase::Impact {source,position_residual_m,..} => format!("First modeled spherical contact with {source:?}; raw boundary residual {position_residual_m} m. This is not a safe landing or cargo delivery."),
                         Phase::Unsupported {reason} => format!("Integration stopped at the last supported state: {reason}"),
                         Phase::Flying => unreachable!(),
-                    }, system:Some(flight.definition.parent.system), body:Some(flight.definition.parent.body), civ:None,
+                    }, system:Some(flight.definition.parent.system), body:Some(flight.definition.parent.body), civ:None, cause: None,
                 });
             }
             self.vehicles[index] = flight;

@@ -282,6 +282,7 @@ impl Universe {
             system: None,
             body: None,
             civ: None,
+            cause: None,
         });
 
         match settings.scenario {
@@ -397,7 +398,7 @@ impl Universe {
         let bio = &mut self.biospheres[bi];
         bio.habitability = hab;
         refresh_derived_resources(&mut self.systems[sys_idx].bodies[b], bio.vegetated());
-        self.history.push(Event { time: t, category: Category::Life, importance: 4, title: format!("{name} is a living world"), detail: "Forests, oceans and complex animal life cover the planet.".into(), system: Some(0), body: Some(b as u32), civ: None });
+        self.history.push(Event { time: t, category: Category::Life, importance: 4, title: format!("{name} is a living world"), detail: "Forests, oceans and complex animal life cover the planet.".into(), system: Some(0), body: Some(b as u32), civ: None, cause: None });
     }
 
     /// Earth today: a mature biosphere (the civilization model does not yet start from the
@@ -463,7 +464,7 @@ impl Universe {
             *k = 150.0;
         }
         self.biospheres[bi].civilization_present = true;
-        self.history.push(Event { time: t, category: Category::Civilization, importance: 5, title: "Humanity".into(), detail: "Anatomically modern humans live as hunter-gatherers with fire, stone tools and language.".into(), system: Some(0), body: Some(earth as u32), civ: Some(civ.id) });
+        self.history.push(Event { time: t, category: Category::Civilization, importance: 5, title: "Humanity".into(), detail: "Anatomically modern humans live as hunter-gatherers with fire, stone tools and language.".into(), system: Some(0), body: Some(earth as u32), civ: Some(civ.id), cause: None });
         self.civs.push(civ);
     }
 
@@ -687,6 +688,7 @@ impl Universe {
             system: Some(r.system),
             body: Some(r.body),
             civ: Some(civ.id),
+            cause: None,
         });
         self.civs.push(civ);
     }
@@ -727,7 +729,7 @@ impl Universe {
             self.civs[ci].stride_years = stride;
             self.civs[ci].next_k = k + stride as u64;
             for e in events {
-                self.history.push(Event { time: t, category: e.category, importance: e.importance, title: e.title, detail: e.detail, system: Some(s as u32), body: Some(b as u32), civ: Some(ci as u32) });
+                self.history.push(Event { time: t, category: e.category, importance: e.importance, title: e.title, detail: e.detail, system: Some(s as u32), body: Some(b as u32), civ: Some(ci as u32), cause: None });
             }
             if let CivStatus::Extinct { .. } = self.civs[ci].status {
                 if let Some(bio) = self.biospheres.iter_mut().find(|x| x.system == r.system && x.body == r.body) {
@@ -777,6 +779,7 @@ impl Universe {
                         system: Some(self.civs[b].system),
                         body: Some(self.civs[b].body),
                         civ: Some(b as u32),
+                        cause: None,
                     });
                 }
             }
@@ -804,14 +807,14 @@ impl Universe {
                 self.probes.push(Probe { civ: ci as u32, from: c.system, to, launched: t, speed, arrived: false });
                 self.civs[ci].probes_launched += 1;
                 let name = self.civs[ci].name.clone();
-                self.history.push(Event { time: t, category: Category::Space, importance: 5, title: format!("Probe launched towards {to_name}"), detail: format!("{name} send a robotic emissary at {:.0}% of light speed.", self.params.civilization.probe_speed_c * 100.0), system: Some(self.civs[ci].system), body: Some(self.civs[ci].body), civ: Some(ci as u32) });
+                self.history.push(Event { time: t, category: Category::Space, importance: 5, title: format!("Probe launched towards {to_name}"), detail: format!("{name} send a robotic emissary at {:.0}% of light speed.", self.params.civilization.probe_speed_c * 100.0), system: Some(self.civs[ci].system), body: Some(self.civs[ci].body), civ: Some(ci as u32), cause: None });
             }
         }
         for p in self.probes.iter_mut().filter(|p| !p.arrived) {
             let dist = (self.systems[p.to as usize].position - self.systems[p.from as usize].position).length();
             if (t - p.launched) * p.speed >= dist {
                 p.arrived = true;
-                self.history.push(Event { time: t, category: Category::Space, importance: 5, title: format!("Probe arrives at {}", self.systems[p.to as usize].name), detail: format!("After {:.0} years in flight.", (t - p.launched) / SECONDS_PER_YEAR), system: Some(p.to), body: None, civ: Some(p.civ) });
+                self.history.push(Event { time: t, category: Category::Space, importance: 5, title: format!("Probe arrives at {}", self.systems[p.to as usize].name), detail: format!("After {:.0} years in flight.", (t - p.launched) / SECONDS_PER_YEAR), system: Some(p.to), body: None, civ: Some(p.civ), cause: None });
             }
         }
     }
@@ -864,7 +867,7 @@ fn life_event(e: &LifeEvent, body: &str, t: f64, s: u32, b: u32) -> Option<Event
         LifeEvent::Sterilised => (4, Category::Disaster, format!("{body} sterilised"), "A catastrophic event wipes out all life.".into()),
         LifeEvent::Collapse => (4, Category::Life, format!("Biosphere of {body} dies"), "The environment can no longer support life.".into()),
     };
-    Some(Event { time: t, category, importance, title, detail, system: Some(s), body: Some(b), civ: None })
+    Some(Event { time: t, category, importance, title, detail, system: Some(s), body: Some(b), civ: None, cause: None })
 }
 
 /// Simulate one biosphere from formation to `start` (prehistory).
