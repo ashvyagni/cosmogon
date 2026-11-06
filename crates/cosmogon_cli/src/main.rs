@@ -880,11 +880,12 @@ fn main() {
         "chronicle" => {if let Err(e)=chronicle_export(&a) {eprintln!("Chronicle export failed: {e}");std::process::exit(1);}},
         "footprint" => {if let Err(e)=footprint_report(&a) {eprintln!("Footprint report failed: {e}");std::process::exit(1);}},
         "gaia" => {if let Err(e)=gaia_catalogue(&a) {eprintln!("Gaia catalogue failed: {e}");std::process::exit(1);}},
+        "exoplanets" => {if let Err(e)=exoplanets_catalogue(&a) {eprintln!("Exoplanets failed: {e}");std::process::exit(1);}},
         "run" => run(&a),
         "check" => check(&a),
         "survey" => survey(&a),
         "profile" => profile(&a),
-        c => { eprintln!("unknown command {c}; use run | check | survey | profile | models | experiment | sweep | replay | validate | chronicle | footprint | gaia"); std::process::exit(1); }
+        c => { eprintln!("unknown command {c}; use run | check | survey | profile | models | experiment | sweep | replay | validate | chronicle | footprint | gaia | exoplanets"); std::process::exit(1); }
     }
 }
 
@@ -1264,6 +1265,16 @@ fn gaia_catalogue(a: &Args) -> Result<(), String> {
     println!();
     println!("Total entries: {}", NEARBY_STARS.len());
     println!("Shown: {}", limit);
+    Ok(())
+}
+
+fn exoplanets_catalogue(_a: &Args) -> Result<(), String> {
+    use cosmogon_sim::astro::exoplanets::EXOPLANET_SYSTEMS;
+    println!("Known exoplanet systems:");
+    println!("{:>24} {:>16} {:>12} {:>10}", "System", "Distance (pc)", "Star Mass (M☉)", "Planets");
+    for sys in EXOPLANET_SYSTEMS {
+        println!("{:>24} {:>16.2} {:>12.3} {:>10}", sys.name, sys.distance_pc, sys.star_mass_solar, sys.bodies.len());
+    }
     Ok(())
 }
 
