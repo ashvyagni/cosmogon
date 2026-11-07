@@ -108,7 +108,7 @@ mod tests {
         let mut pool = ObjectPool::<i32>::new();
         let obj = pool.acquire();
         pool.release(obj);
-        let obj2 = pool.acquire();
+        let _obj2 = pool.acquire();
         assert_eq!(pool.total_allocated, 1); // only one allocation
     }
     #[test] fn buffer_pool_acquire_release() {
