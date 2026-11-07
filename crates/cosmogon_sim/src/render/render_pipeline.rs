@@ -13,6 +13,10 @@ pub struct PipelineStageConfig {
     pub actual_time_ms: f64,
 }
 
+pub fn count() -> usize {
+    DEFAULT_PIPELINE_STAGES.len()
+}
+
 pub const DEFAULT_PIPELINE_STAGES: &[PipelineStageConfig] = &[
     PipelineStageConfig { stage: PipelineStage::Culling, enabled: true, max_time_ms: 1.0, actual_time_ms: 0.0 },
     PipelineStageConfig { stage: PipelineStage::LODSelection, enabled: true, max_time_ms: 2.0, actual_time_ms: 0.0 },

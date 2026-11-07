@@ -106,13 +106,13 @@ mod tests {
     #[test] fn erosion_reduces_variance() {
         let p0 = TerrainParams { erosion_eras: 0, ..DEFAULT_TERRAIN };
         let p10 = TerrainParams { erosion_eras: 10, ..DEFAULT_TERRAIN };
-        let mut v0 = 0.0f64; let mut v10 = 0.0f64; let mut n = 0;
+        let mut v0 = 0.0f64; let mut v10 = 0.0f64; let mut _n = 0;
         for lat in -60..61 { for lon in -180..181 {
             v0 += terrain_height(&p0, lat as f64, lon as f64).powi(2);
             v10 += terrain_height(&p10, lat as f64, lon as f64).powi(2);
-            n += 1;
+            _n += 1;
         }}
-        assert!(n > 0);
+        assert!(_n > 0);
     }
     #[test] fn density_increases() {
         assert!(feature_density(TerrainDetail::Ultra) > feature_density(TerrainDetail::High));

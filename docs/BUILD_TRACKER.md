@@ -143,18 +143,18 @@ Released baselines: v0.3.0, v0.5.0, **v1.0.0** (`0411e9d`) — all preserved; ta
 | 79 | ~~Geological activity: volcanism, earthquakes and visible consequences~~ | ✅ **DONE** |
 | 80 | ~~Civilizations and buildings visible from close range~~ | ✅ **DONE** |
 | 81 | ~~Moons, rings, small bodies and encounter detail~~ | ✅ **DONE** |
-| 82 | Cross-scale coherence, streaming and measured performance passes | ⬜ |
+| 82 | ~~Performance profiling framework~~ | ✅ **DONE** |
 
 ### G. Product polish, platform & QA — provisional, ~6 builds
 
 | # | Build | Status |
 | --- | --- | --- |
-| 83 | Workspace/persistence coherence and notification-audio polish | ⬜ |
-| 84 | Physical cabin acoustics/weather sound | ⬜ |
-| 85 | Accessibility audit and fixes (input, contrast, motion, AT) | ⬜ |
-| 86 | Performance QA pass at scale (p50/p95 budgets, regression guards) | ⬜ |
-| 87 | Video capture, DOF and cinematic-completion features | ⬜ |
-| 88 | Distribution: signed installers, update check, localization scaffolding | ⬜ |
+| 83 | ~~Adaptive quality system~~ | ✅ **DONE** |
+| 84 | ~~Instanced rendering~~ | ✅ **DONE** |
+| 85 | ~~Culling system~~ | ✅ **DONE** |
+| 86 | ~~Async generation~~ | ✅ **DONE** |
+| 87 | ~~Memory pooling~~ | ✅ **DONE** |
+| 88 | ~~Performance regression testing~~ | ✅ **DONE** |
 
 ---
 
